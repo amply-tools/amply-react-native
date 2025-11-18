@@ -1,0 +1,7 @@
+// Root build.gradle for composite build
+allprojects {
+  repositories {
+    google()
+    mavenCentral()
+  }
+}

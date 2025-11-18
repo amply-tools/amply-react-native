@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "declaration": true,
+    "declarationMap": true,
+    "composite": true,
+    "rootDir": ".",
+    "skipLibCheck": true,
+    "noEmit": false
+  },
+  "include": ["src/**/*", "plugin/**/*"],
+  "exclude": ["example", "example-expo", "android", "ios", "dist", "node_modules"]
+}

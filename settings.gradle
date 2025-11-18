@@ -1,0 +1,4 @@
+rootProject.name = 'amply-react-native'
+
+include ':amply_amply-react-native'
+project(':amply_amply-react-native').projectDir = file('android')

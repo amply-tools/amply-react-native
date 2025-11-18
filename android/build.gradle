@@ -1,0 +1,90 @@
+buildscript {
+  ext {
+    kotlin_version = "1.9.24"
+  }
+  repositories {
+    google()
+    mavenCentral()
+  }
+  dependencies {
+    classpath("com.android.tools.build:gradle:8.2.2")
+    classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version")
+  }
+}
+
+apply plugin: 'com.android.library'
+apply plugin: 'org.jetbrains.kotlin.android'
+
+def amplySdkVersion = project.findProperty('amplySdkVersion') ?: System.getenv('AMPLY_SDK_VERSION') ?: '0.1.7'
+group = 'tools.amply'
+version = amplySdkVersion
+
+def reactNativeRootDir = file("$projectDir/../node_modules/react-native")
+def reactNativeArchitectures =
+  project.hasProperty("reactNativeArchitectures") ?
+    project.getProperty("reactNativeArchitectures").split(",") :
+    ["armeabi-v7a", "arm64-v8a", "x86", "x86_64"]
+
+android {
+  namespace 'tools.amply.sdk.reactnative'
+  compileSdkVersion 34
+
+  defaultConfig {
+    minSdkVersion 24
+    targetSdkVersion 34
+    consumerProguardFiles 'consumer-rules.pro'
+
+    ndk {
+      abiFilters(*reactNativeArchitectures)
+    }
+
+    // Передаём путь в RN CMake (оба CMakeLists.txt используют это)
+    externalNativeBuild {
+      cmake {
+        arguments "-DREACT_NATIVE_DIR=${reactNativeRootDir.absolutePath}", "-DANDROID_STL=c++_shared"
+      }
+    }
+  }
+
+  compileOptions {
+    sourceCompatibility JavaVersion.VERSION_17
+    targetCompatibility JavaVersion.VERSION_17
+  }
+
+  kotlinOptions {
+    jvmTarget = '17'
+  }
+
+  lintOptions {
+    abortOnError false
+  }
+
+  buildFeatures {
+    prefab true
+  }
+
+  sourceSets {
+    main {
+      java.srcDirs += ["src/newarch/java"]
+    }
+  }
+
+  externalNativeBuild {
+    cmake {
+      path file("src/main/jni/CMakeLists.txt")
+    }
+  }
+}
+
+repositories {
+  mavenLocal()
+  google()
+  mavenCentral()
+}
+
+dependencies {
+  implementation("com.facebook.react:react-android")
+  implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
+  implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+  implementation("tools.amply:sdk-android:${amplySdkVersion}")
+}

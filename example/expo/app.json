@@ -1,0 +1,15 @@
+{
+  "expo": {
+    "entryPoint": "./app/index.tsx",
+    "plugins": [
+      "@amply/amply-react-native"
+    ],
+    "scheme": "amplyexpo",
+    "android": {
+      "package": "tools.amply.sdk.sample.expo"
+    },
+    "ios": {
+      "bundleIdentifier": "tools.amply.sdk.sample.expo"
+    }
+  }
+}

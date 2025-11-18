@@ -1,0 +1,11 @@
+{
+  "name": "amply-react-native",
+  "description": "React Native bridge for Amply Kotlin Multiplatform SDK",
+  "platforms": ["android", "ios"],
+  "android": {
+    "package": "com.amply.reactnative"
+  },
+  "ios": {
+    "podspecName": "AmplyReactNative"
+  }
+}

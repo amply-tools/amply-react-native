@@ -1,0 +1,17 @@
+{
+  "modules": {
+    "Amply": {
+      "type": "NativeModule",
+      "jsSpecFile": "src/nativeSpecs/NativeAmplyModule.ts",
+      "libraryName": "AmplyReactNative",
+      "android": {
+        "sourceDir": "android/src/newarch",
+        "packageName": "tools.amply.sdk.reactnative",
+        "cppOutputDirectory": "android/src/newarch/jni/react/renderer/turbomodule/Amply"
+      },
+      "ios": {
+        "sourceDir": "ios/Sources/AmplyReactNative"
+      }
+    }
+  }
+}
