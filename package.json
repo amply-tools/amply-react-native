@@ -1,7 +1,7 @@
 {
-  "name": "@amply/amply-react-native",
-  "version": "0.1.0-alpha.0",
-  "description": "React Native bridge for Amply Kotlin Multiplatform SDK",
+  "name": "@amplytools/react-native-amply-sdk",
+  "version": "0.1.0",
+  "description": "React Native SDK for Amply: Mobile SDK to orchestrate in-app experiences and campaigns remotely, without app releases",
   "license": "MIT",
   "repository": {
     "type": "git",
