@@ -16,17 +16,17 @@ Amply is a customer data collection and analytics platform. This SDK provides a 
 
 | Feature | Status | Platform |
 |---------|--------|----------|
-| Event tracking | ✅ Complete | Android |
-| Deeplink campaigns | ✅ Complete | Android |
-| System events API | ✅ Complete | Android |
-| Data inspection | ✅ Complete | Android |
-| Advanced API (identify, setUserProperty, flush) | ⏳ Pending | Android |
-| iOS support | ⏳ Pending | iOS |
+| Event tracking | ✅ Complete | Android, iOS |
+| Deeplink campaigns | ✅ Complete | Android, iOS |
+| System events API | ✅ Complete | Android, iOS |
+| Data inspection | ✅ Complete | Android, iOS |
+| Advanced API (identify, setUserProperty, flush) | ⏳ Pending | Android, iOS |
 
 **Requirements:**
 - React Native >= 0.79 (New Architecture enabled)
 - Expo SDK >= 53 (for Expo apps)
 - Android API 24+
+- iOS 13.0+
 
 ---
 
@@ -61,6 +61,7 @@ No manual configuration needed - it's fully automatic!
 - Expo SDK 53+
 - Node.js 18+
 - Android SDK/emulator or physical device
+- iOS 13.0+ / Xcode 14+ (for iOS development)
 
 ### Quick Setup (3 Steps)
 
@@ -89,7 +90,8 @@ The plugin declaration is required by Expo for security (prevents arbitrary code
 ```bash
 expo prebuild --clean    # (~2-3 minutes, one-time only)
 expo start               # Terminal 1: Start dev server
-expo run:android         # Terminal 2: Build and run
+expo run:android         # Terminal 2: Build and run (Android)
+expo run:ios             # Terminal 2: Build and run (iOS)
 ```
 
 That's it! The Amply SDK is automatically configured via React Native's autolinking mechanism. Setup is one-time only (~3 minutes total).
@@ -101,6 +103,7 @@ That's it! The Amply SDK is automatically configured via React Native's autolink
 - Android API level 24+
 - Android Gradle Plugin 7.0+
 - Gradle 7.0+
+- iOS 13.0+ / Xcode 14+
 
 **Enable New Architecture:**
 
@@ -134,7 +137,8 @@ This enables React Native's autolinking mechanism to discover the Amply module.
 **3. Rebuild:**
 
 ```bash
-yarn react-native run-android
+yarn react-native run-android    # Android
+yarn react-native run-ios        # iOS
 ```
 
 **4. Verify successful integration:**
@@ -180,7 +184,8 @@ cd example/bare
 yarn install
 
 # Build and run on device/emulator
-yarn react-native run-android
+yarn react-native run-android    # Android
+yarn react-native run-ios        # iOS
 ```
 
 **Key files:**
@@ -223,7 +228,8 @@ cd example/expo
 yarn install
 expo prebuild --clean   # Plugin runs automatically
 expo start              # Terminal 1
-expo run:android        # Terminal 2
+expo run:android        # Terminal 2 (Android)
+expo run:ios            # Terminal 2 (iOS)
 ```
 
 **Note for SDK Developers:**
@@ -237,7 +243,8 @@ When modifying the SDK and testing:
    rm -rf android ios         # Clean native code
    expo prebuild --clean      # Plugin runs automatically via config
    expo start                 # Terminal 1
-   expo run:android           # Terminal 2
+   expo run:android           # Terminal 2 (Android)
+   expo run:ios               # Terminal 2 (iOS)
    ```
 
 The config plugin in `expo.config.js` automatically runs during `expo prebuild`.
@@ -500,6 +507,17 @@ android/                           # Android native code
           ├── AmplyReactNative.h
           └── AmplyReactNative-generated.cpp
 
+ios/                               # iOS native code
+  ├── AmplyReactNative.podspec      # CocoaPods spec
+  └── Sources/AmplyReactNative/
+      ├── AmplyModule.mm            # TurboModule implementation
+      ├── Amply/                    # Codegen artifacts
+      │   ├── Amply.h
+      │   └── Amply-generated.mm
+      └── AmplyReactNative/         # Module header and codegen
+          ├── AmplyReactNative.h
+          └── AmplyReactNative-generated.mm
+
 example/bare/                      # Bare RN example app
   └── android/                      # Native setup for bare RN
 
@@ -596,12 +614,14 @@ cd example/expo
 yarn install
 expo prebuild --clean    # Plugin runs via expo.config.js
 expo start               # Terminal 1
-expo run:android         # Terminal 2
+expo run:android         # Terminal 2 (Android)
+expo run:ios             # Terminal 2 (iOS)
 
 # Bare RN app (for production validation)
 cd example/bare
 yarn install
-yarn react-native run-android
+yarn react-native run-android    # Android
+yarn react-native run-ios        # iOS
 ```
 
 **Recommended development workflow:**
@@ -618,12 +638,14 @@ cd example/expo
 rm -rf android ios       # Clean native code
 expo prebuild --clean    # Plugin runs automatically via config
 expo start               # Terminal 1
-expo run:android         # Terminal 2
+expo run:android         # Terminal 2 (Android)
+expo run:ios             # Terminal 2 (iOS)
 
 # 4. Once working, test with bare RN
 cd ../bare
 yarn install
-yarn react-native run-android
+yarn react-native run-android    # Android
+yarn react-native run-ios        # iOS
 ```
 
 **4. PR checklist:**

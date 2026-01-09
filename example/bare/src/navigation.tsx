@@ -14,6 +14,7 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 const linking: LinkingOptions<RootStackParamList> = {
   ...createAmplyLinkingOptions<RootStackParamList>({
     promoRouteName: 'Promo',
+    additionalPrefixes: ['amply://'],
   }),
   config: {
     screens: {

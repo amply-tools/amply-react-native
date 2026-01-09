@@ -113,6 +113,31 @@ class DefaultAmplyClient(
     }
   }
 
+  /**
+   * Registers a listener for deep links triggered by Amply SDK campaigns.
+   *
+   * This listener allows app developers to:
+   * 1. Know that a deep link originated from Amply SDK (vs. external sources like
+   *    push notifications, browser links, or other SDKs)
+   * 2. Access campaign metadata via the `info` map (campaign ID, variant, etc.)
+   *    that is not available in the URL itself
+   * 3. Track/log Amply-specific deep link events for analytics
+   *
+   * Example use case:
+   *   // In JS:
+   *   Amply.addDeepLinkListener(event => {
+   *     // We know this deep link came from an Amply campaign, not from elsewhere
+   *     analytics.track('Amply campaign triggered', { url: event.url, info: event.info });
+   *   });
+   *
+   * The deep link flow:
+   *   Campaign triggers → KMP SDK → onDeepLink callback → JS event emitted
+   *                                      ↓ (then)
+   *                              startActivity(Intent.ACTION_VIEW) → Linking API
+   *
+   * Note: The listener is an observer, not a controller. The SDK will still open
+   * the URL via system after emitting the event.
+   */
   override fun registerDeepLinkListener() {
     val instance = requireInstance()
     if (!deepLinkRegistered.compareAndSet(false, true)) {

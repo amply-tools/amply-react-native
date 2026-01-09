@@ -7,7 +7,7 @@ import {
   type PartialState,
 } from '@react-navigation/native';
 
-const INTERNAL_PREFIXES = ['amply://campaign'] as const;
+const INTERNAL_PREFIXES = ['amply://', 'amply://campaign'] as const;
 
 let latestInternalUrl: string | null = null;
 const pendingInternalUrls: string[] = [];

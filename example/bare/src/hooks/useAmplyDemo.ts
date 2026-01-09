@@ -5,7 +5,6 @@ import Amply, {
   formatSystemEventLabel,
   systemEvents,
 } from '@amply/amply-react-native';
-import {routeAmplyUrl} from '../utils/amplyDeepLinkRouter';
 
 const SAMPLE_CONFIG = {
   appId: 'tools.amply.sample',
@@ -49,6 +48,8 @@ export const useAmplyDemo = () => {
     setLogsUpdatedAt(new Date());
   }, []);
 
+  // Log deep links from Linking API for demo UI visibility.
+  // Navigation is handled by React Navigation's linking config (createAmplyLinkingOptions).
   useEffect(() => {
     const handleUrl = (payload: {url: string}) => {
       const {url} = payload;
@@ -141,6 +142,9 @@ export const useAmplyDemo = () => {
     initializeAmply();
   }, [autoInitialize, initializeAmply, initialized, settingsLoaded]);
 
+  // Listen for deep links triggered by Amply SDK campaigns.
+  // This is for logging/demo purposes only - navigation is handled by React Navigation's
+  // linking config (createAmplyLinkingOptions) which receives deep links via Linking API.
   useEffect(() => {
     if (!initialized) {
       return;
@@ -153,15 +157,7 @@ export const useAmplyDemo = () => {
       console.log('[Amply] Deep link listener received event:', event.url);
       setDeepLink(event.url);
       setDeepLinkUpdatedAt(new Date());
-      appendLog(`Deep link ${event.url} (consumed=${event.consumed})`);
-      if (!event.consumed) {
-        const handledInternally = routeAmplyUrl(event.url);
-        if (handledInternally) {
-          appendLog(`Navigated to promo with ${event.url}.`);
-        } else {
-          appendLog(`Opening external URL ${event.url}.`);
-        }
-      }
+      appendLog(`SDK deep link: ${event.url} (consumed=${event.consumed})`);
     })
       .then(unsubscribe => {
         if (unsubscribed) {

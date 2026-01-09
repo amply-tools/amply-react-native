@@ -3,18 +3,31 @@
 /**
  * Post-prebuild script to register AmplyPackage in MainApplication
  *
- * This script runs after expo prebuild to modify the MainApplication.kt file
- * and register AmplyPackage. This is necessary because Expo's config plugin
- * system doesn't reliably execute for workspace dependencies.
+ * WHY THIS SCRIPT EXISTS:
+ * When developing with local/workspace SDK sources (e.g., "file:../../" dependency),
+ * Expo's autolinking and config plugin system don't reliably detect and register
+ * the native package. This is because:
+ *
+ * 1. Autolinking scans node_modules for react-native.config.js, but workspace
+ *    symlinks can cause detection issues
+ * 2. Config plugins may not execute properly for local dependencies that aren't
+ *    published to npm
+ *
+ * This script manually patches MainApplication.kt after prebuild to ensure
+ * AmplyPackage is registered correctly.
+ *
+ * NOTE: For production apps using the published @amply/amply-react-native package
+ * from npm, this script should NOT be needed - autolinking should work automatically.
+ *
+ * This script only applies to Android. For iOS-only builds, it will skip gracefully.
  */
 
 const fs = require('fs');
 const path = require('path');
 
+const androidDir = path.join(__dirname, '..', 'android');
 const mainApplicationPath = path.join(
-  __dirname,
-  '..',
-  'android',
+  androidDir,
   'app',
   'src',
   'main',
@@ -26,10 +39,17 @@ const mainApplicationPath = path.join(
 );
 
 function registerAmplyPackage() {
+  // Check if Android directory exists (may not exist for iOS-only prebuild)
+  if (!fs.existsSync(androidDir)) {
+    console.log('ℹ Android directory not found - skipping Android package registration');
+    console.log('  (This is normal for iOS-only builds)');
+    return;
+  }
+
   if (!fs.existsSync(mainApplicationPath)) {
-    console.error(`ERROR: MainApplication.kt not found at ${mainApplicationPath}`);
-    console.error('Make sure you run this script after expo prebuild');
-    process.exit(1);
+    console.warn(`⚠ MainApplication.kt not found at ${mainApplicationPath}`);
+    console.warn('  Android prebuild may not have completed. Skipping registration.');
+    return;
   }
 
   let contents = fs.readFileSync(mainApplicationPath, 'utf-8');

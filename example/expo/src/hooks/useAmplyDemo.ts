@@ -50,9 +50,17 @@ export const useAmplyDemo = () => {
     setLogsUpdatedAt(new Date());
   }, []);
 
-  // Handle deep links from Linking API
+  // Log deep links from Linking API for demo UI visibility.
+  // Navigation is handled separately in _layout.tsx via routeAmplyUrl().
   useEffect(() => {
+    // Filter out Expo development client URLs - these are internal to Expo
+    const isExpoDevClientUrl = (url: string) =>
+      url.includes('expo-development-client');
+
     const handleUrl = ({ url }: { url: string }) => {
+      if (isExpoDevClientUrl(url)) {
+        return; // Skip Expo dev client URLs
+      }
       setDeepLink(url);
       setDeepLinkUpdatedAt(new Date());
       appendLog(`Linking event: ${url}`);
@@ -61,7 +69,7 @@ export const useAmplyDemo = () => {
     const subscription = Linking.addEventListener('url', handleUrl);
 
     Linking.getInitialURL().then(initialUrl => {
-      if (initialUrl) {
+      if (initialUrl && !isExpoDevClientUrl(initialUrl)) {
         setDeepLink(initialUrl);
         setDeepLinkUpdatedAt(new Date());
         appendLog(`Initial URL: ${initialUrl}`);
@@ -134,7 +142,9 @@ export const useAmplyDemo = () => {
     initializeAmply();
   }, [autoInitialize, initialized, settingsLoaded]);
 
-  // Deep link listener
+  // Listen for deep links triggered by Amply SDK campaigns.
+  // This handles navigation for custom scheme URLs (e.g., amply://).
+  // External URLs (http/https) are opened by native code via system Linking API.
   useEffect(() => {
     if (!initialized) {
       return;
@@ -147,15 +157,10 @@ export const useAmplyDemo = () => {
       console.log('[Amply] Deep link listener received event:', event.url);
       setDeepLink(event.url);
       setDeepLinkUpdatedAt(new Date());
-      appendLog(`Deep link ${event.url} (consumed=${event.consumed})`);
-      if (!event.consumed) {
-        const handledInternally = routeAmplyUrl(event.url);
-        if (handledInternally) {
-          appendLog(`Navigated to promo with ${event.url}.`);
-        } else {
-          appendLog(`Opening external URL ${event.url}.`);
-        }
-      }
+      appendLog(`SDK deep link: ${event.url} (consumed=${event.consumed})`);
+
+      // Handle navigation for Amply deep links
+      routeAmplyUrl(event.url);
     })
       .then(unsubscribe => {
         if (unsubscribed) {
@@ -180,6 +185,26 @@ export const useAmplyDemo = () => {
       setStatus('Initialized');
     }
   }, [initialized]);
+
+  // Auto-fetch device dataset after initialization
+  useEffect(() => {
+    if (!initialized) {
+      return;
+    }
+
+    const fetchDataset = async () => {
+      try {
+        const snapshot = await Amply.getDataSetSnapshot({ kind: '@device' });
+        setDatasetJson(JSON.stringify(snapshot, null, 2));
+        setDatasetUpdatedAt(new Date());
+        appendLog('Auto-fetched device dataset');
+      } catch (error) {
+        appendLog(`Dataset fetch error: ${String(error)}`);
+      }
+    };
+
+    fetchDataset();
+  }, [appendLog, initialized]);
 
   const initializeAmply = useCallback(async () => {
     try {

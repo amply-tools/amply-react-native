@@ -3,16 +3,19 @@
  *
  * The Amply React Native SDK is a TurboModule that uses react-native.config.js
  * for autolinking in Bare React Native. For Expo apps, this plugin ensures
- * AmplyPackage is registered in MainApplication.
+ * AmplyPackage is registered in MainApplication (Android).
+ *
+ * iOS: AmplySDK is fetched automatically from CocoaPods Trunk via the podspec
+ * dependency declaration - no Podfile modifications needed.
  *
  * Architecture:
  * - Bare RN: Uses react-native.config.js autolinking (fully automatic)
- * - Expo: Uses react-native.config.js + Expo config plugin for registration
+ * - Expo: Uses react-native.config.js + Expo config plugin for Android registration
  *
  * Usage:
  * 1. Add to app.json: "@amply/amply-react-native" in plugins array
  * 2. Run: expo prebuild --clean
- * 3. Run: expo start and expo run:android
+ * 3. Run: expo start and expo run:android/ios
  */
 
 import { ConfigPlugin, withMainApplication } from '@expo/config-plugins';
@@ -22,12 +25,9 @@ type WithAmplyPluginProps = {
 };
 
 /**
- * Expo Config Plugin for Amply React Native SDK
- *
- * Registers AmplyPackage in MainApplication for Expo apps.
- * The native module discovery still uses react-native.config.js.
+ * Modifies Android MainApplication to register AmplyPackage
  */
-const withAmply: ConfigPlugin<WithAmplyPluginProps> = (config) => {
+const withAmplyAndroid: ConfigPlugin = (config) => {
   return withMainApplication(config, async (cfg) => {
     let contents = cfg.modResults.contents;
 
@@ -52,6 +52,17 @@ const withAmply: ConfigPlugin<WithAmplyPluginProps> = (config) => {
     cfg.modResults.contents = contents;
     return cfg;
   });
+};
+
+/**
+ * Expo Config Plugin for Amply React Native SDK
+ *
+ * Registers AmplyPackage in MainApplication for Expo apps (Android).
+ * iOS uses CocoaPods Trunk for AmplySDK - no modifications needed.
+ */
+const withAmply: ConfigPlugin<WithAmplyPluginProps> = (config) => {
+  // Apply Android modifications
+  return withAmplyAndroid(config);
 };
 
 export default withAmply;
