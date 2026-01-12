@@ -35,7 +35,7 @@ Amply is a customer data collection and analytics platform. This SDK provides a 
 ### Step 1: Install the Package
 
 ```bash
-yarn add @amply/amply-react-native
+yarn add @amplytools/react-native-amply-sdk
 ```
 
 ### Step 2: Configure Your App
@@ -68,7 +68,7 @@ No manual configuration needed - it's fully automatic!
 **Step 1: Install the package**
 
 ```bash
-yarn add @amply/amply-react-native
+yarn add @amplytools/react-native-amply-sdk
 ```
 
 **Step 2: Add plugin to app.json**
@@ -77,7 +77,7 @@ yarn add @amply/amply-react-native
 {
   "expo": {
     "plugins": [
-      "@amply/amply-react-native"
+      "@amplytools/react-native-amply-sdk"
     ]
   }
 }
@@ -118,7 +118,7 @@ newArchEnabled=true
 **1. Install the package:**
 
 ```bash
-yarn add @amply/amply-react-native
+yarn add @amplytools/react-native-amply-sdk
 ```
 
 **2. Verify or create `react-native.config.js` at project root:**
@@ -258,7 +258,7 @@ The config plugin in `expo.config.js` automatically runs during `expo prebuild`.
 Initialize the SDK before using any other features.
 
 ```typescript
-import Amply from '@amply/amply-react-native';
+import Amply from '@amplytools/react-native-amply-sdk';
 
 async function initAmply() {
   try {
@@ -345,7 +345,7 @@ if (!event.consumed) {
 **Implementation:**
 
 ```typescript
-import Amply from '@amply/amply-react-native';
+import Amply from '@amplytools/react-native-amply-sdk';
 
 let unsubscribe: (() => void) | null = null;
 
@@ -427,7 +427,7 @@ adb shell am start \
 Monitor low-level events from the native SDK.
 
 ```typescript
-import Amply, { useAmplySystemEvents, formatSystemEventLabel } from '@amply/amply-react-native';
+import Amply, { useAmplySystemEvents, formatSystemEventLabel } from '@amplytools/react-native-amply-sdk';
 
 // Method 1: Direct listener
 const unsubscribe = await Amply.systemEvents.addListener((event) => {
@@ -564,7 +564,7 @@ The sample apps (`example/bare` and `example/expo`) are the primary testing envi
 ```json
 {
   "dependencies": {
-    "@amply/amply-react-native": "link:../.."
+    "@amplytools/react-native-amply-sdk": "link:../.."
   }
 }
 ```
@@ -579,7 +579,7 @@ The sample apps (`example/bare` and `example/expo`) are the primary testing envi
 - **Expo:** Fast iteration, hot reload, local SDK development
 - **Bare:** Production-like testing, intent filter testing, real-world scenario
 
-> **Important:** Do not use `link:` protocol in regular apps. Regular developers should install from npm: `yarn add @amply/amply-react-native`
+> **Important:** Do not use `link:` protocol in regular apps. Regular developers should install from npm: `yarn add @amplytools/react-native-amply-sdk`
 
 ### Contributing Workflow
 
