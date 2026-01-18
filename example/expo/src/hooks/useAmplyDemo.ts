@@ -11,6 +11,7 @@ const SAMPLE_CONFIG = {
   appId: 'tools.amply.sample',
   apiKeyPublic: '58572785b5',
   apiKeySecret: 'cd81c4039052cae270d7',
+  debug: true,
 } as const;
 
 const AUTO_INIT_STORAGE_KEY = 'amply:autoInitialize';

@@ -79,6 +79,6 @@ adb shell am start -a android.intent.action.VIEW -d "amply://campaign?id=test123
 
 ## Learn More
 
-- [Amply SDK Documentation](https://github.com/amply/amply-react-native)
+- [Amply SDK Documentation](https://github.com/amplytools/amply-react-native)
 - [Expo Documentation](https://docs.expo.dev/)
 - [React Native Documentation](https://reactnative.dev/)

@@ -11,9 +11,46 @@
 
 using namespace facebook::react;
 
-@interface Amply : NativeAmplyModuleSpecBase <NativeAmplyModuleSpec, ASDKDeepLinkListener>
+/**
+ * Log level enum for SDK debug output.
+ */
+typedef NS_ENUM(NSInteger, AmplyLogLevel) {
+    AmplyLogLevelNone = 0,
+    AmplyLogLevelError = 1,
+    AmplyLogLevelWarn = 2,
+    AmplyLogLevelInfo = 3,
+    AmplyLogLevelDebug = 4
+};
+
+static AmplyLogLevel AmplyLogLevelFromString(NSString *level) {
+    if (!level) return AmplyLogLevelNone;
+    NSString *lowercased = [level lowercaseString];
+    if ([lowercased isEqualToString:@"none"]) return AmplyLogLevelNone;
+    if ([lowercased isEqualToString:@"error"]) return AmplyLogLevelError;
+    if ([lowercased isEqualToString:@"warn"]) return AmplyLogLevelWarn;
+    if ([lowercased isEqualToString:@"info"]) return AmplyLogLevelInfo;
+    if ([lowercased isEqualToString:@"debug"]) return AmplyLogLevelDebug;
+    return AmplyLogLevelNone;
+}
+
+static NSString* AmplyLogLevelToString(AmplyLogLevel level) {
+    switch (level) {
+        case AmplyLogLevelNone: return @"none";
+        case AmplyLogLevelError: return @"error";
+        case AmplyLogLevelWarn: return @"warn";
+        case AmplyLogLevelInfo: return @"info";
+        case AmplyLogLevelDebug: return @"debug";
+    }
+    return @"none";
+}
+
+// Note: ASDKLogListener is not yet available in KMP SDK iOS XCFramework
+// Logging support will be enabled when the KMP SDK iOS exports these APIs
+@interface Amply : NativeAmplyModuleSpecBase <NativeAmplyModuleSpec, ASDKDeepLinkListener, ASDKSystemEventsListener>
 @property (nonatomic, strong) ASDKAmply *amplyInstance;
 @property (nonatomic, assign) BOOL deepLinkListenerRegistered;
+@property (nonatomic, assign) BOOL systemEventsListenerRegistered;
+@property (nonatomic, assign) AmplyLogLevel currentLogLevel;
 @end
 
 @implementation Amply
@@ -65,6 +102,31 @@ RCT_EXPORT_MODULE()
 
     // Create Amply instance
     self.amplyInstance = [[ASDKAmply alloc] initWithConfig:amplyConfig];
+
+    // Parse debug and logLevel options
+    std::optional<bool> debugOpt = config.debug();
+    BOOL debug = debugOpt.has_value() && debugOpt.value();
+    NSString *logLevelStr = config.logLevel();
+
+    // Resolve effective log level: logLevel takes precedence over debug
+    if (logLevelStr && logLevelStr.length > 0) {
+      self.currentLogLevel = AmplyLogLevelFromString(logLevelStr);
+    } else if (debug) {
+      self.currentLogLevel = AmplyLogLevelDebug;
+    } else {
+      self.currentLogLevel = AmplyLogLevelNone;
+    }
+
+    if (self.currentLogLevel != AmplyLogLevelNone) {
+      RCTLogInfo(@"[AmplyReactNative] Debug logging enabled at level: %@", AmplyLogLevelToString(self.currentLogLevel));
+    }
+
+    // TODO: Enable when KMP SDK iOS exports setLogLevel and setLogListener
+    // [self.amplyInstance setLogLevelLevel:AmplyLogLevelToString(self.currentLogLevel)];
+    // [self registerLogListenerInternal];
+
+    // Register system events listener
+    [self registerSystemEventsListenerInternal];
 
     RCTLogInfo(@"[AmplyReactNative] Initialized with appId=%@", appId);
 
@@ -323,6 +385,56 @@ RCT_EXPORT_MODULE()
   // Required by RN EventEmitter contracts.
   RCTLogInfo(@"[AmplyReactNative] removeListeners called with count: %f", count);
 }
+
+- (void)setLogLevel:(NSString *)level
+{
+  self.currentLogLevel = AmplyLogLevelFromString(level);
+  RCTLogInfo(@"[AmplyReactNative] Log level set to: %@", level);
+  // TODO: Enable when KMP SDK iOS exports setLogLevel
+  // if (self.amplyInstance) {
+  //   [self.amplyInstance setLogLevelLevel:level];
+  // }
+}
+
+- (NSString *)getLogLevel
+{
+  return AmplyLogLevelToString(self.currentLogLevel);
+}
+
+#pragma mark - Internal Listener Registration
+
+- (void)registerSystemEventsListenerInternal
+{
+  if (self.systemEventsListenerRegistered) {
+    return;
+  }
+  if (!self.amplyInstance) {
+    return;
+  }
+  [self.amplyInstance setSystemEventsListenerListener:self];
+  self.systemEventsListenerRegistered = YES;
+  RCTLogInfo(@"[AmplyReactNative] System events listener registered");
+}
+
+#pragma mark - ASDKSystemEventsListener
+
+- (void)onEventEvent:(id<ASDKEventInterface>)event
+{
+  RCTLogInfo(@"[AmplyReactNative] System event received: %@", event.name);
+
+  NSDictionary *payload = @{
+    @"name": event.name ?: @"",
+    @"type": @"system",
+    @"timestamp": @(event.timestamp),
+    @"properties": event.properties ?: @{}
+  };
+
+  [self emitOnSystemEvent:payload];
+}
+
+// TODO: Enable ASDKLogListener when KMP SDK iOS exports logging APIs
+// #pragma mark - ASDKLogListener
+// - (void)onLogEntry:(ASDKLogEntry *)entry { ... }
 
 - (std::shared_ptr<TurboModule>)getTurboModule:(const ObjCTurboModule::InitParams &)params
 {

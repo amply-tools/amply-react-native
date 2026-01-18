@@ -4,6 +4,16 @@ import type {EventEmitter} from 'react-native/Libraries/Types/CodegenTypes';
 
 type JsonMap = {[key: string]: unknown};
 
+/**
+ * Log level for SDK debug output.
+ * - 'none': No logging
+ * - 'error': Only errors
+ * - 'warn': Errors and warnings
+ * - 'info': SDK lifecycle events (init, session start/end)
+ * - 'debug': Everything including campaign evaluation details
+ */
+export type LogLevel = 'none' | 'error' | 'warn' | 'info' | 'debug';
+
 export type AmplyInitializationConfig = {
   appId: string;
   apiKeyPublic: string;
@@ -11,6 +21,16 @@ export type AmplyInitializationConfig = {
   endpoint?: string | null;
   datasetPrefetch?: DataSetType[] | null;
   defaultConfig?: string | null;
+  /**
+   * Enable debug logging. Shorthand for logLevel: 'debug'.
+   * When true, logs will appear in the Metro console.
+   */
+  debug?: boolean | null;
+  /**
+   * Set the log level for SDK output.
+   * Takes precedence over `debug` if both are specified.
+   */
+  logLevel?: LogLevel | null;
 };
 
 export type EventType = 'custom' | 'system';
@@ -71,6 +91,16 @@ export interface Spec extends TurboModule {
   getRecentEvents(limit: number): Promise<EventRecord[]>;
   getDataSetSnapshot(type: DataSetType): Promise<DataSetSnapshot>;
   registerDeepLinkListener(): void;
+  /**
+   * Set the log level at runtime.
+   * @param level The log level to set
+   */
+  setLogLevel(level: string): void;
+  /**
+   * Get the current log level.
+   * @returns The current log level as a string
+   */
+  getLogLevel(): string;
   readonly onSystemEvent: EventEmitter<SystemEventPayload>;
   readonly onDeepLink: EventEmitter<DeepLinkEvent>;
   addListener(eventName: string): void;

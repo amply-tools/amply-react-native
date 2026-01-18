@@ -9,6 +9,7 @@ import tools.amply.sdk.reactnative.model.DataSetType.EventParam
 import tools.amply.sdk.reactnative.model.DataSetType.Events
 import tools.amply.sdk.reactnative.model.DataSetType.TriggeredEvent
 import tools.amply.sdk.reactnative.model.EventEnvelope
+import tools.amply.sdk.reactnative.model.LogLevel
 import tools.amply.sdk.reactnative.NativeAmplyModuleSpec
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Dynamic
@@ -40,6 +41,7 @@ class AmplyModule(reactContext: ReactApplicationContext) :
   private var lastEmittedDeepLinkId: Long? = null
   private var lifecycleRegistered = false
   private var systemEventsJob: Job? = null
+  private var logEventsJob: Job? = null
 
   override fun getName(): String = NAME
 
@@ -57,8 +59,12 @@ class AmplyModule(reactContext: ReactApplicationContext) :
   override fun initialize(config: ReadableMap, promise: Promise) {
     scope.launch {
       try {
-        client.initialize(config.toInitializationOptions())
+        val options = config.toInitializationOptions()
+
+        client.initialize(options)
         ensureSystemEventCollection()
+        ensureLogEventCollection()
+
         promise.resolve(null)
       } catch (throwable: Throwable) {
         promise.reject(INIT_ERROR, throwable)
@@ -136,6 +142,15 @@ class AmplyModule(reactContext: ReactApplicationContext) :
     client.registerDeepLinkListener()
   }
 
+  override fun setLogLevel(level: String) {
+    val newLevel = LogLevel.fromString(level)
+    client.setLogLevel(newLevel)
+  }
+
+  override fun getLogLevel(): String {
+    return client.getLogLevel().toString()
+  }
+
   override fun addListener(eventName: String) {
     // Required by RN EventEmitter contracts. The native TurboModule infrastructure
     // handles the actual listener bookkeeping through the C++ event emitter.
@@ -163,6 +178,8 @@ class AmplyModule(reactContext: ReactApplicationContext) :
     deepLinkJob = null
     systemEventsJob?.cancel()
     systemEventsJob = null
+    logEventsJob?.cancel()
+    logEventsJob = null
     lastEmittedDeepLinkId = null
     client.shutdown()
   }
@@ -181,6 +198,16 @@ class AmplyModule(reactContext: ReactApplicationContext) :
 
   private fun emitSystemEvent(event: EventEnvelope) {
     emitOnSystemEvent(event.toWritableMap())
+  }
+
+  private fun ensureLogEventCollection() {
+    if (logEventsJob == null) {
+      logEventsJob = scope.launch {
+        client.logEvents.collectLatest { event ->
+          emitOnSystemEvent(event.toWritableMap())
+        }
+      }
+    }
   }
 
   private fun ensureSystemEventCollection() {
@@ -208,6 +235,8 @@ class AmplyModule(reactContext: ReactApplicationContext) :
       null
     }
     val defaultConfig = if (hasKey("defaultConfig")) getString("defaultConfig") else null
+    val debug = if (hasKey("debug")) getBoolean("debug") else null
+    val logLevel = if (hasKey("logLevel")) LogLevel.fromString(getString("logLevel")) else null
 
     return AmplyInitializationOptions(
       appId = appId,
@@ -216,6 +245,8 @@ class AmplyModule(reactContext: ReactApplicationContext) :
       endpoint = endpoint,
       datasetPrefetch = datasetPrefetch,
       defaultConfig = defaultConfig,
+      debug = debug,
+      logLevel = logLevel,
     )
   }
 

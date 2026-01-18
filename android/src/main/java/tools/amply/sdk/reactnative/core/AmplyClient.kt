@@ -5,11 +5,13 @@ import tools.amply.sdk.reactnative.model.AmplyInitializationOptions
 import tools.amply.sdk.reactnative.model.DataSetType
 import tools.amply.sdk.reactnative.model.DeepLinkPayload
 import tools.amply.sdk.reactnative.model.EventEnvelope
+import tools.amply.sdk.reactnative.model.LogLevel
 import kotlinx.coroutines.flow.SharedFlow
 
 interface AmplyClient {
   val deepLinkEvents: SharedFlow<DeepLinkPayload>
   val systemEvents: SharedFlow<EventEnvelope>
+  val logEvents: SharedFlow<EventEnvelope>
 
   suspend fun initialize(options: AmplyInitializationOptions)
 
@@ -23,6 +25,9 @@ interface AmplyClient {
 
   fun registerDeepLinkListener()
   fun registerSystemEventListener()
+
+  fun setLogLevel(level: LogLevel)
+  fun getLogLevel(): LogLevel
 
   fun onHostResume(activity: Activity?)
 

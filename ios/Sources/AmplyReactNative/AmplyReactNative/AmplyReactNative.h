@@ -41,6 +41,8 @@ namespace JS {
       NSString *endpoint() const;
       id<NSObject> _Nullable datasetPrefetch() const;
       NSString *defaultConfig() const;
+      std::optional<bool> debug() const;
+      NSString *logLevel() const;
 
       AmplyInitializationConfig(NSDictionary *const v) : _v(v) {}
     private:
@@ -84,6 +86,8 @@ namespace JS {
                    resolve:(RCTPromiseResolveBlock)resolve
                     reject:(RCTPromiseRejectBlock)reject;
 - (void)registerDeepLinkListener;
+- (void)setLogLevel:(NSString *)level;
+- (NSString *)getLogLevel;
 - (void)addListener:(NSString *)eventName;
 - (void)removeListeners:(double)count;
 
@@ -136,6 +140,16 @@ inline id<NSObject> _Nullable JS::NativeAmplyModule::AmplyInitializationConfig::
 inline NSString *JS::NativeAmplyModule::AmplyInitializationConfig::defaultConfig() const
 {
   id const p = _v[@"defaultConfig"];
+  return RCTBridgingToOptionalString(p);
+}
+inline std::optional<bool> JS::NativeAmplyModule::AmplyInitializationConfig::debug() const
+{
+  id const p = _v[@"debug"];
+  return RCTBridgingToOptionalBool(p);
+}
+inline NSString *JS::NativeAmplyModule::AmplyInitializationConfig::logLevel() const
+{
+  id const p = _v[@"logLevel"];
   return RCTBridgingToOptionalString(p);
 }
 inline NSString *JS::NativeAmplyModule::TrackEventPayload::name() const

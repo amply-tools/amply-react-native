@@ -55,7 +55,7 @@ Native iOS (ios/Sources/AmplyReactNative/)
 
 **Expo Config Plugin:** `plugin/src/withAmply.ts` registers `AmplyPackage` in `MainApplication.kt` during `expo prebuild`
 
-**Local Development:** Example apps use `"link:../../"` dependency for rapid SDK iteration without npm reinstall
+**Local Development:** Example apps may use `"link:../../"` dependency for rapid SDK iteration without npm reinstall
 
 ### Codegen Flow
 

@@ -28,6 +28,8 @@ import tools.amply.sdk.config.amplyConfig
 import tools.amply.sdk.core.AmplySDKInterface
 import tools.amply.sdk.events.EventInterface
 import tools.amply.sdk.events.SystemEventsListener
+import tools.amply.sdk.logging.LogEntry
+import tools.amply.sdk.logging.LogListener
 
 class DefaultAmplyClient(
   private val application: Application,
@@ -53,6 +55,12 @@ class DefaultAmplyClient(
   )
   override val systemEvents: SharedFlow<EventEnvelope> = _systemEvents.asSharedFlow()
 
+  private val _logEvents = MutableSharedFlow<EventEnvelope>(
+    replay = 0,
+    extraBufferCapacity = 64,
+  )
+  override val logEvents: SharedFlow<EventEnvelope> = _logEvents.asSharedFlow()
+
   override suspend fun initialize(options: AmplyInitializationOptions) {
     var createdInstance = false
     mutex.withLock {
@@ -65,6 +73,35 @@ class DefaultAmplyClient(
         val instance = withContext(Dispatchers.Default) {
           Amply(config, application)
         }
+
+        // Set log level from config
+        val effectiveLogLevel = options.getEffectiveLogLevel()
+        instance.setLogLevel(effectiveLogLevel.toString())
+
+        // Set up log listener to emit logs to JS
+        instance.setLogListener(object : LogListener {
+          override fun onLog(entry: LogEntry) {
+            val envelope = EventEnvelope(
+              id = null,
+              name = "DebugLog",
+              type = "system",
+              timestamp = entry.timestamp,
+              properties = buildMap {
+                put("level", entry.level.toString())
+                put("category", entry.category)
+                put("message", entry.message)
+                entry.details?.let { put("details", it) }
+              }
+            )
+            if (!_logEvents.tryEmit(envelope)) {
+              android.util.Log.w(
+                "AmplyReactNative",
+                "Dropping log event due to backpressure"
+              )
+            }
+          }
+        })
+
         ensureSystemEventsListener(instance)
         amplyInstance = instance
         createdInstance = true
@@ -175,6 +212,18 @@ class DefaultAmplyClient(
       "registerSystemEventListener() called; alreadyRegistered=${systemEventsRegistered.get()}"
     )
     ensureSystemEventsListener(instance)
+  }
+
+  override fun setLogLevel(level: tools.amply.sdk.reactnative.model.LogLevel) {
+    val instance = amplyInstance ?: return
+    instance.setLogLevel(level.toString())
+    android.util.Log.i("AmplyReactNative", "Log level set to: $level")
+  }
+
+  override fun getLogLevel(): tools.amply.sdk.reactnative.model.LogLevel {
+    val instance = amplyInstance ?: return tools.amply.sdk.reactnative.model.LogLevel.NONE
+    val kmpLevel = instance.getLogLevel()
+    return tools.amply.sdk.reactnative.model.LogLevel.fromString(kmpLevel.toString())
   }
 
   override fun onHostResume(activity: Activity?) {
