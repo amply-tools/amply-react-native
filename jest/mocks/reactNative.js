@@ -1,50 +1,18 @@
-const {EventEmitter} = require('events');
-
-class MockNativeEventEmitter extends EventEmitter {
-  constructor() {
-    super();
-  }
-
-  addListener(event, handler) {
-    super.addListener(event, handler);
-    return {
-      remove: () => this.removeListener(event, handler),
-    };
-  }
-}
-
-function createTurboEmitter(channel) {
-  const emitter = new MockNativeEventEmitter();
-  return {
-    addListener(handler) {
-      return emitter.addListener(channel, handler);
-    },
-    emit(payload) {
-      emitter.emit(channel, payload);
-    },
-  };
-}
-
-const systemEventEmitter = createTurboEmitter('onSystemEvent');
-const deepLinkEmitter = createTurboEmitter('onDeepLink');
-
+// Mock for react-native to avoid Flow type parsing issues in Jest
 module.exports = {
-  NativeModules: {
-    Amply: {
-      onSystemEvent(handler) {
-        return systemEventEmitter.addListener(handler);
-      },
-      onDeepLink(handler) {
-        return deepLinkEmitter.addListener(handler);
-      },
-      registerDeepLinkListener() {},
-      __emitSystemEvent(payload) {
-        systemEventEmitter.emit(payload);
-      },
-      __emitDeepLinkEvent(payload) {
-        deepLinkEmitter.emit(payload);
-      },
-    },
+  NativeModules: {},
+  NativeEventEmitter: class NativeEventEmitter {
+    constructor() {}
+    addListener() { return { remove: () => {} }; }
+    removeListener() {}
+    removeAllListeners() {}
   },
-  NativeEventEmitter: MockNativeEventEmitter,
+  Platform: {
+    OS: 'ios',
+    select: (obj) => obj.ios ?? obj.default,
+  },
+  TurboModuleRegistry: {
+    get: () => null,
+    getEnforcing: () => ({}),
+  },
 };

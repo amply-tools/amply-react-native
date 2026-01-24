@@ -1,3 +1,1 @@
-import 'react-native-gesture-handler/jestSetup';
-
-jest.mock('react-native/Libraries/EventEmitter/NativeEventEmitter');
+// SDK test setup - minimal mocks for unit testing

@@ -12,7 +12,17 @@ const DEFAULT_LABELS: Record<string, string> = {
   CampaignFinished: 'Campaign finished',
 };
 
-export function formatSystemEventLabel(event: EventRecord): string {
+export interface FormatOptions {
+  /** When true, includes detailed campaign information. Default: false */
+  verbose?: boolean;
+}
+
+export function formatSystemEventLabel(
+  event: EventRecord,
+  options: FormatOptions = {},
+): string {
+  const {verbose = false} = options;
+
   if (event.name === 'CampaignShown') {
     const campaignId = event.properties.campaignId as string | undefined;
     const source = event.properties.source as string | undefined;
@@ -27,9 +37,20 @@ export function formatSystemEventLabel(event: EventRecord): string {
   if (event.name === 'ConfigFetchFinished') {
     const success = event.properties.success as boolean | undefined;
     const campaignCount = event.properties.campaignCount as number | undefined;
-    const countLabel =
-      typeof campaignCount === 'number' ? ` (${campaignCount} campaigns)` : '';
-    return success === false ? 'Config fetch failed' : `Config fetch finished${countLabel}`;
+    const campaigns = event.properties.campaigns as Array<{id: string; name: string}> | undefined;
+
+    if (success === false) {
+      return 'Config fetch failed';
+    }
+
+    const countLabel = typeof campaignCount === 'number' ? `${campaignCount}` : '0';
+
+    if (verbose && campaigns && campaigns.length > 0) {
+      const campaignLines = campaigns.map(c => `- [${c.id}] ${c.name}`).join('\n');
+      return `Config fetch finished\nCampaigns: ${countLabel}\n${campaignLines}`;
+    }
+
+    return `Config fetch finished (${countLabel} campaigns)`;
   }
   return DEFAULT_LABELS[event.name] ?? `System event ${event.name}`;
 }

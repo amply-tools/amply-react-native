@@ -13,6 +13,8 @@ const SAMPLE_CONFIG = {
   debug: true,
 } as const;
 
+const FORMAT_OPTIONS = {verbose: SAMPLE_CONFIG.debug} as const;
+
 const AUTO_INIT_STORAGE_KEY = 'amply:autoInitialize';
 export type LogEntry = {
   id: string;
@@ -117,7 +119,7 @@ export const useAmplyDemo = () => {
 
     systemEvents
       .addListener(event =>
-        appendLog(formatSystemEventLabel(event), new Date(event.timestamp)),
+        appendLog(formatSystemEventLabel(event, FORMAT_OPTIONS), new Date(event.timestamp)),
       )
       .then(unsubscribe => {
         if (unsubscribed) {

@@ -50,6 +50,7 @@ static NSString* AmplyLogLevelToString(AmplyLogLevel level) {
 @property (nonatomic, strong) ASDKAmply *amplyInstance;
 @property (nonatomic, assign) BOOL deepLinkListenerRegistered;
 @property (nonatomic, assign) BOOL systemEventsListenerRegistered;
+@property (nonatomic, assign) BOOL lifecycleObserversRegistered;
 @property (nonatomic, assign) AmplyLogLevel currentLogLevel;
 @end
 
@@ -127,6 +128,9 @@ RCT_EXPORT_MODULE()
 
     // Register system events listener
     [self registerSystemEventsListenerInternal];
+
+    // Register for app lifecycle notifications to manage session state
+    [self registerLifecycleObservers];
 
     RCTLogInfo(@"[AmplyReactNative] Initialized with appId=%@", appId);
 
@@ -414,6 +418,49 @@ RCT_EXPORT_MODULE()
   [self.amplyInstance setSystemEventsListenerListener:self];
   self.systemEventsListenerRegistered = YES;
   RCTLogInfo(@"[AmplyReactNative] System events listener registered");
+}
+
+#pragma mark - App Lifecycle Management
+
+- (void)registerLifecycleObservers
+{
+  if (self.lifecycleObserversRegistered) {
+    return;
+  }
+
+  [[NSNotificationCenter defaultCenter] addObserver:self
+                                           selector:@selector(handleAppDidEnterBackground:)
+                                               name:UIApplicationDidEnterBackgroundNotification
+                                             object:nil];
+
+  [[NSNotificationCenter defaultCenter] addObserver:self
+                                           selector:@selector(handleAppWillEnterForeground:)
+                                               name:UIApplicationWillEnterForegroundNotification
+                                             object:nil];
+
+  self.lifecycleObserversRegistered = YES;
+  RCTLogInfo(@"[AmplyReactNative] App lifecycle observers registered");
+}
+
+- (void)handleAppDidEnterBackground:(NSNotification *)notification
+{
+  RCTLogInfo(@"[AmplyReactNative] App entered background - pausing session");
+  if (self.amplyInstance) {
+    [self.amplyInstance pauseSession];
+  }
+}
+
+- (void)handleAppWillEnterForeground:(NSNotification *)notification
+{
+  RCTLogInfo(@"[AmplyReactNative] App entering foreground - resuming session");
+  if (self.amplyInstance) {
+    [self.amplyInstance resumeSession];
+  }
+}
+
+- (void)dealloc
+{
+  [[NSNotificationCenter defaultCenter] removeObserver:self];
 }
 
 #pragma mark - ASDKSystemEventsListener

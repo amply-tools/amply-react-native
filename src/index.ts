@@ -2,6 +2,7 @@ import getNativeModule from './nativeModule';
 import {addSystemEventListener as addSystemEventListenerInternal} from './systemEvents';
 export {useAmplySystemEvents} from './hooks/useAmplySystemEvents';
 export {formatSystemEventLabel} from './systemEventUtils';
+export type {FormatOptions} from './systemEventUtils';
 import type {
   AmplyInitializationConfig,
   DataSetSnapshot,
