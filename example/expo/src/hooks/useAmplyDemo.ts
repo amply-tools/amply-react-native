@@ -117,9 +117,13 @@ export const useAmplyDemo = () => {
     let unsubscribeFn: (() => void) | undefined;
 
     systemEvents
-      .addListener(event =>
-        appendLog(formatSystemEventLabel(event, FORMAT_OPTIONS), new Date(event.timestamp)),
-      )
+      .addListener(event => {
+        // Skip DebugLog events - they are shown in Metro console, not UI
+        if (event.name === 'DebugLog') {
+          return;
+        }
+        appendLog(formatSystemEventLabel(event, FORMAT_OPTIONS), new Date(event.timestamp));
+      })
       .then(unsubscribe => {
         if (unsubscribed) {
           unsubscribe();

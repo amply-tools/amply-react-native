@@ -56,7 +56,7 @@ class DefaultAmplyClient(
   override val systemEvents: SharedFlow<EventEnvelope> = _systemEvents.asSharedFlow()
 
   private val _logEvents = MutableSharedFlow<EventEnvelope>(
-    replay = 0,
+    replay = 64,  // Replay buffer to capture init logs before JS collection starts
     extraBufferCapacity = 64,
   )
   override val logEvents: SharedFlow<EventEnvelope> = _logEvents.asSharedFlow()
@@ -70,21 +70,19 @@ class DefaultAmplyClient(
           "AmplyReactNative",
           "Initializing Amply with appId=${options.appId} apiKeyPublic=${options.apiKeyPublic.takeIf { it.isNotEmpty() } ?: "<empty>"}"
         )
-        val instance = withContext(Dispatchers.Default) {
-          Amply(config, application)
-        }
 
-        // Set log level from config
+        // Set log level and listener BEFORE creating instance so initialization logs are captured
         val effectiveLogLevel = options.getEffectiveLogLevel()
-        instance.setLogLevel(effectiveLogLevel.toString())
+        tools.amply.sdk.logging.Logger.setLevel(effectiveLogLevel.toString())
+        android.util.Log.i("AmplyReactNative", "Pre-init log level set to: $effectiveLogLevel")
 
-        // Set up log listener to emit logs to JS
-        instance.setLogListener(object : LogListener {
+        // Set up log listener BEFORE instance creation to capture all init logs
+        tools.amply.sdk.logging.Logger.setListener(object : LogListener {
           override fun onLog(entry: LogEntry) {
             val envelope = EventEnvelope(
               id = null,
               name = "DebugLog",
-              type = "system",
+              type = "log",
               timestamp = entry.timestamp,
               properties = buildMap {
                 put("level", entry.level.toString())
@@ -101,6 +99,10 @@ class DefaultAmplyClient(
             }
           }
         })
+
+        val instance = withContext(Dispatchers.Default) {
+          Amply(config, application)
+        }
 
         ensureSystemEventsListener(instance)
         amplyInstance = instance

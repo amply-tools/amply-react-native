@@ -203,7 +203,8 @@ class AmplyModule(reactContext: ReactApplicationContext) :
   private fun ensureLogEventCollection() {
     if (logEventsJob == null) {
       logEventsJob = scope.launch {
-        client.logEvents.collectLatest { event ->
+        // Use collect (not collectLatest) to ensure all replayed logs are emitted
+        client.logEvents.collect { event ->
           emitOnSystemEvent(event.toWritableMap())
         }
       }

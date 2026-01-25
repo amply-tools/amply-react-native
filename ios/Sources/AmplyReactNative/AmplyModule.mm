@@ -44,9 +44,7 @@ static NSString* AmplyLogLevelToString(AmplyLogLevel level) {
     return @"none";
 }
 
-// Note: ASDKLogListener is not yet available in KMP SDK iOS XCFramework
-// Logging support will be enabled when the KMP SDK iOS exports these APIs
-@interface Amply : NativeAmplyModuleSpecBase <NativeAmplyModuleSpec, ASDKDeepLinkListener, ASDKSystemEventsListener>
+@interface Amply : NativeAmplyModuleSpecBase <NativeAmplyModuleSpec, ASDKDeepLinkListener, ASDKSystemEventsListener, ASDKLogListener>
 @property (nonatomic, strong) ASDKAmply *amplyInstance;
 @property (nonatomic, assign) BOOL deepLinkListenerRegistered;
 @property (nonatomic, assign) BOOL systemEventsListenerRegistered;
@@ -63,6 +61,9 @@ RCT_EXPORT_MODULE()
             reject:(RCTPromiseRejectBlock)reject
 {
   @try {
+    // Clear any existing log listener from previous instance (prevents crash on hot reload)
+    [[ASDKLogger shared] setListenerListener:nil];
+
     NSString *appId = config.appId();
     NSString *apiKeyPublic = config.apiKeyPublic();
     NSString *apiKeySecret = config.apiKeySecret();
@@ -101,10 +102,7 @@ RCT_EXPORT_MODULE()
 
     ASDKAmplyConfig *amplyConfig = [configBuilder build];
 
-    // Create Amply instance
-    self.amplyInstance = [[ASDKAmply alloc] initWithConfig:amplyConfig];
-
-    // Parse debug and logLevel options
+    // Parse debug and logLevel options BEFORE creating instance
     std::optional<bool> debugOpt = config.debug();
     BOOL debug = debugOpt.has_value() && debugOpt.value();
     NSString *logLevelStr = config.logLevel();
@@ -118,13 +116,15 @@ RCT_EXPORT_MODULE()
       self.currentLogLevel = AmplyLogLevelNone;
     }
 
+    // Set log level and listener BEFORE creating Amply instance to capture init logs
     if (self.currentLogLevel != AmplyLogLevelNone) {
-      RCTLogInfo(@"[AmplyReactNative] Debug logging enabled at level: %@", AmplyLogLevelToString(self.currentLogLevel));
+      RCTLogInfo(@"[AmplyReactNative] Setting log level to: %@ BEFORE instance creation", AmplyLogLevelToString(self.currentLogLevel));
+      [[ASDKLogger shared] setLevelLevel:AmplyLogLevelToString(self.currentLogLevel)];
+      [[ASDKLogger shared] setListenerListener:self];
     }
 
-    // TODO: Enable when KMP SDK iOS exports setLogLevel and setLogListener
-    // [self.amplyInstance setLogLevelLevel:AmplyLogLevelToString(self.currentLogLevel)];
-    // [self registerLogListenerInternal];
+    // Create Amply instance (this triggers initialization and config fetch)
+    self.amplyInstance = [[ASDKAmply alloc] initWithConfig:amplyConfig];
 
     // Register system events listener
     [self registerSystemEventsListenerInternal];
@@ -394,10 +394,12 @@ RCT_EXPORT_MODULE()
 {
   self.currentLogLevel = AmplyLogLevelFromString(level);
   RCTLogInfo(@"[AmplyReactNative] Log level set to: %@", level);
-  // TODO: Enable when KMP SDK iOS exports setLogLevel
-  // if (self.amplyInstance) {
-  //   [self.amplyInstance setLogLevelLevel:level];
-  // }
+  [[ASDKLogger shared] setLevelLevel:level];
+
+  // Ensure log listener is registered when enabling logging
+  if (self.currentLogLevel != AmplyLogLevelNone) {
+    [[ASDKLogger shared] setListenerListener:self];
+  }
 }
 
 - (NSString *)getLogLevel
@@ -461,6 +463,8 @@ RCT_EXPORT_MODULE()
 - (void)dealloc
 {
   [[NSNotificationCenter defaultCenter] removeObserver:self];
+  // Clear log listener to prevent crash when Logger tries to call deallocated object
+  [[ASDKLogger shared] setListenerListener:nil];
 }
 
 #pragma mark - ASDKSystemEventsListener
@@ -479,9 +483,41 @@ RCT_EXPORT_MODULE()
   [self emitOnSystemEvent:payload];
 }
 
-// TODO: Enable ASDKLogListener when KMP SDK iOS exports logging APIs
-// #pragma mark - ASDKLogListener
-// - (void)onLogEntry:(ASDKLogEntry *)entry { ... }
+#pragma mark - ASDKLogListener
+
+- (void)onLogEntry:(ASDKLogEntry *)entry
+{
+  // Convert log level to string
+  NSString *levelString = @"unknown";
+  if (entry.level == ASDKLogLevel.debug) {
+    levelString = @"debug";
+  } else if (entry.level == ASDKLogLevel.info) {
+    levelString = @"info";
+  } else if (entry.level == ASDKLogLevel.warn) {
+    levelString = @"warn";
+  } else if (entry.level == ASDKLogLevel.error) {
+    levelString = @"error";
+  } else if (entry.level == ASDKLogLevel.none) {
+    levelString = @"none";
+  }
+
+  NSMutableDictionary *properties = [NSMutableDictionary dictionary];
+  properties[@"level"] = levelString;
+  properties[@"category"] = entry.category ?: @"";
+  properties[@"message"] = entry.message ?: @"";
+  if (entry.details) {
+    properties[@"details"] = entry.details;
+  }
+
+  NSDictionary *payload = @{
+    @"name": @"DebugLog",
+    @"type": @"log",
+    @"timestamp": @(entry.timestamp),
+    @"properties": properties
+  };
+
+  [self emitOnSystemEvent:payload];
+}
 
 - (std::shared_ptr<TurboModule>)getTurboModule:(const ObjCTurboModule::InitParams &)params
 {

@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name         = 'AmplyReactNative'
-  s.version      = '0.1.0-alpha.0'
+  s.version      = '0.1.0-alpha.1'
   s.summary      = 'React Native bridge for Amply SDK'
   s.homepage     = 'https://github.com/amply/amply-react-native'
   s.license      = { :type => 'MIT' }
@@ -16,7 +16,7 @@ Pod::Spec.new do |s|
   s.dependency 'React-RCTFabric'
 
   # Amply KMP SDK from CocoaPods
-  s.dependency 'AmplySDK', '~> 0.1.10'
+  s.dependency 'AmplySDK', '~> 0.1.12'
 
   s.libraries = 'c++'
   s.pod_target_xcconfig = {
