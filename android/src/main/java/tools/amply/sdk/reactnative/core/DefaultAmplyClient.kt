@@ -28,8 +28,6 @@ import tools.amply.sdk.config.amplyConfig
 import tools.amply.sdk.core.AmplySDKInterface
 import tools.amply.sdk.events.EventInterface
 import tools.amply.sdk.events.SystemEventsListener
-import tools.amply.sdk.logging.LogEntry
-import tools.amply.sdk.logging.LogListener
 
 class DefaultAmplyClient(
   private val application: Application,
@@ -55,12 +53,6 @@ class DefaultAmplyClient(
   )
   override val systemEvents: SharedFlow<EventEnvelope> = _systemEvents.asSharedFlow()
 
-  private val _logEvents = MutableSharedFlow<EventEnvelope>(
-    replay = 64,  // Replay buffer to capture init logs before JS collection starts
-    extraBufferCapacity = 64,
-  )
-  override val logEvents: SharedFlow<EventEnvelope> = _logEvents.asSharedFlow()
-
   override suspend fun initialize(options: AmplyInitializationOptions) {
     var createdInstance = false
     mutex.withLock {
@@ -76,29 +68,8 @@ class DefaultAmplyClient(
         tools.amply.sdk.logging.Logger.setLevel(effectiveLogLevel.toString())
         android.util.Log.i("AmplyReactNative", "Pre-init log level set to: $effectiveLogLevel")
 
-        // Set up log listener BEFORE instance creation to capture all init logs
-        tools.amply.sdk.logging.Logger.setListener(object : LogListener {
-          override fun onLog(entry: LogEntry) {
-            val envelope = EventEnvelope(
-              id = null,
-              name = "DebugLog",
-              type = "log",
-              timestamp = entry.timestamp,
-              properties = buildMap {
-                put("level", entry.level.toString())
-                put("category", entry.category)
-                put("message", entry.message)
-                entry.details?.let { put("details", it) }
-              }
-            )
-            if (!_logEvents.tryEmit(envelope)) {
-              android.util.Log.w(
-                "AmplyReactNative",
-                "Dropping log event due to backpressure"
-              )
-            }
-          }
-        })
+        // Log listener removed - logs are printed directly by KMP SDK via println
+        // No need to emit logs as events to JS layer
 
         val instance = withContext(Dispatchers.Default) {
           Amply(config, application)

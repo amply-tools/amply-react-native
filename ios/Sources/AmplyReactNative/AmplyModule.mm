@@ -44,7 +44,7 @@ static NSString* AmplyLogLevelToString(AmplyLogLevel level) {
     return @"none";
 }
 
-@interface Amply : NativeAmplyModuleSpecBase <NativeAmplyModuleSpec, ASDKDeepLinkListener, ASDKSystemEventsListener, ASDKLogListener>
+@interface Amply : NativeAmplyModuleSpecBase <NativeAmplyModuleSpec, ASDKDeepLinkListener, ASDKSystemEventsListener>
 @property (nonatomic, strong) ASDKAmply *amplyInstance;
 @property (nonatomic, assign) BOOL deepLinkListenerRegistered;
 @property (nonatomic, assign) BOOL systemEventsListenerRegistered;
@@ -61,9 +61,6 @@ RCT_EXPORT_MODULE()
             reject:(RCTPromiseRejectBlock)reject
 {
   @try {
-    // Clear any existing log listener from previous instance (prevents crash on hot reload)
-    [[ASDKLogger shared] setListenerListener:nil];
-
     NSString *appId = config.appId();
     NSString *apiKeyPublic = config.apiKeyPublic();
     NSString *apiKeySecret = config.apiKeySecret();
@@ -116,11 +113,11 @@ RCT_EXPORT_MODULE()
       self.currentLogLevel = AmplyLogLevelNone;
     }
 
-    // Set log level and listener BEFORE creating Amply instance to capture init logs
+    // Set log level BEFORE creating Amply instance
+    // Logs are printed directly by KMP SDK via println, not emitted to JS
     if (self.currentLogLevel != AmplyLogLevelNone) {
       RCTLogInfo(@"[AmplyReactNative] Setting log level to: %@ BEFORE instance creation", AmplyLogLevelToString(self.currentLogLevel));
       [[ASDKLogger shared] setLevelLevel:AmplyLogLevelToString(self.currentLogLevel)];
-      [[ASDKLogger shared] setListenerListener:self];
     }
 
     // Create Amply instance (this triggers initialization and config fetch)
@@ -395,11 +392,6 @@ RCT_EXPORT_MODULE()
   self.currentLogLevel = AmplyLogLevelFromString(level);
   RCTLogInfo(@"[AmplyReactNative] Log level set to: %@", level);
   [[ASDKLogger shared] setLevelLevel:level];
-
-  // Ensure log listener is registered when enabling logging
-  if (self.currentLogLevel != AmplyLogLevelNone) {
-    [[ASDKLogger shared] setListenerListener:self];
-  }
 }
 
 - (NSString *)getLogLevel
@@ -463,8 +455,6 @@ RCT_EXPORT_MODULE()
 - (void)dealloc
 {
   [[NSNotificationCenter defaultCenter] removeObserver:self];
-  // Clear log listener to prevent crash when Logger tries to call deallocated object
-  [[ASDKLogger shared] setListenerListener:nil];
 }
 
 #pragma mark - ASDKSystemEventsListener
@@ -478,42 +468,6 @@ RCT_EXPORT_MODULE()
     @"type": @"system",
     @"timestamp": @(event.timestamp),
     @"properties": event.properties ?: @{}
-  };
-
-  [self emitOnSystemEvent:payload];
-}
-
-#pragma mark - ASDKLogListener
-
-- (void)onLogEntry:(ASDKLogEntry *)entry
-{
-  // Convert log level to string
-  NSString *levelString = @"unknown";
-  if (entry.level == ASDKLogLevel.debug) {
-    levelString = @"debug";
-  } else if (entry.level == ASDKLogLevel.info) {
-    levelString = @"info";
-  } else if (entry.level == ASDKLogLevel.warn) {
-    levelString = @"warn";
-  } else if (entry.level == ASDKLogLevel.error) {
-    levelString = @"error";
-  } else if (entry.level == ASDKLogLevel.none) {
-    levelString = @"none";
-  }
-
-  NSMutableDictionary *properties = [NSMutableDictionary dictionary];
-  properties[@"level"] = levelString;
-  properties[@"category"] = entry.category ?: @"";
-  properties[@"message"] = entry.message ?: @"";
-  if (entry.details) {
-    properties[@"details"] = entry.details;
-  }
-
-  NSDictionary *payload = @{
-    @"name": @"DebugLog",
-    @"type": @"log",
-    @"timestamp": @(entry.timestamp),
-    @"properties": properties
   };
 
   [self emitOnSystemEvent:payload];

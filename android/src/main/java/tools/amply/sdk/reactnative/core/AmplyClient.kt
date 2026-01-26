@@ -11,7 +11,6 @@ import kotlinx.coroutines.flow.SharedFlow
 interface AmplyClient {
   val deepLinkEvents: SharedFlow<DeepLinkPayload>
   val systemEvents: SharedFlow<EventEnvelope>
-  val logEvents: SharedFlow<EventEnvelope>
 
   suspend fun initialize(options: AmplyInitializationOptions)
 
