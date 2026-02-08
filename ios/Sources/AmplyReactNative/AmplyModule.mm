@@ -502,20 +502,13 @@ RCT_EXPORT_MODULE()
 {
   // Forward log entries to JS as DebugLog events via the system event channel
   NSString *levelStr = @"debug";
-  switch (entry.level) {
-    case ASDKLogLevelError:
-      levelStr = @"error";
-      break;
-    case ASDKLogLevelWarn:
-      levelStr = @"warn";
-      break;
-    case ASDKLogLevelInfo:
-      levelStr = @"info";
-      break;
-    case ASDKLogLevelDebug:
-    default:
-      levelStr = @"debug";
-      break;
+  ASDKLogLevel *level = entry.level;
+  if (level == ASDKLogLevel.error) {
+    levelStr = @"error";
+  } else if (level == ASDKLogLevel.warn) {
+    levelStr = @"warn";
+  } else if (level == ASDKLogLevel.info) {
+    levelStr = @"info";
   }
 
   NSMutableDictionary *properties = [NSMutableDictionary dictionary];
