@@ -14,7 +14,56 @@ import type {
 } from './nativeSpecs/NativeAmplyModule';
 
 let deepLinkRegistered = false;
+let debugLogListenerRegistered = false;
 const deepLinkSubscriptions = new Set<() => void>();
+
+/**
+ * Format a debug log entry for console output using new format.
+ */
+function formatDebugLog(event: EventRecord): string {
+  const props = event.properties as {
+    level?: string;
+    category?: string;
+    message?: string;
+  };
+  const level = props.level?.toUpperCase() || 'DEBUG';
+  const category = props.category
+    ? props.category.charAt(0).toUpperCase() + props.category.slice(1)
+    : 'Sdk';
+  return `[Amply.${category}][${level}] ${props.message || ''}`;
+}
+
+/**
+ * Set up debug log listener that outputs to console.
+ */
+function ensureDebugLogListener(): void {
+  if (debugLogListenerRegistered) {
+    return;
+  }
+  debugLogListenerRegistered = true;
+
+  addSystemEventListenerInternal((event: EventRecord) => {
+    if (event.name === 'DebugLog') {
+      const formattedLog = formatDebugLog(event);
+      const props = event.properties as {level?: string};
+      const level = props.level?.toLowerCase();
+
+      switch (level) {
+        case 'error':
+          console.error(formattedLog);
+          break;
+        case 'warn':
+          console.warn(formattedLog);
+          break;
+        case 'debug':
+          console.debug(formattedLog);
+          break;
+        default:
+          console.log(formattedLog);
+      }
+    }
+  });
+}
 
 async function ensureDeepLinkRegistration(): Promise<void> {
   if (!deepLinkRegistered) {
@@ -40,7 +89,19 @@ function trackDeepLinkSubscription(subscription?: {remove?: () => void}): () => 
 }
 
 export async function initialize(config: AmplyInitializationConfig): Promise<void> {
+  // Set up debug log listener if debug mode is enabled
+  if (config.debug || config.logLevel) {
+    ensureDebugLogListener();
+  }
   await getNativeModule().initialize(config);
+}
+
+/**
+ * Set the user ID for analytics. Pass null to clear.
+ * @param userId The user ID to set, or null to clear
+ */
+export function setUserId(userId: string | null): void {
+  getNativeModule().setUserId(userId);
 }
 
 /**
@@ -48,6 +109,9 @@ export async function initialize(config: AmplyInitializationConfig): Promise<voi
  * @param level The log level: 'none' | 'error' | 'warn' | 'info' | 'debug'
  */
 export function setLogLevel(level: LogLevel): void {
+  if (level !== 'none') {
+    ensureDebugLogListener();
+  }
   getNativeModule().setLogLevel(level);
 }
 
@@ -130,6 +194,7 @@ export default {
   addSystemEventListener,
   addSystemEventsListener,
   removeAllListeners,
+  setUserId,
   setLogLevel,
   getLogLevel,
   systemEvents,

@@ -41,6 +41,7 @@ class AmplyModule(reactContext: ReactApplicationContext) :
   private var lastEmittedDeepLinkId: Long? = null
   private var lifecycleRegistered = false
   private var systemEventsJob: Job? = null
+  private var logEventsJob: Job? = null
 
   override fun getName(): String = NAME
 
@@ -62,6 +63,7 @@ class AmplyModule(reactContext: ReactApplicationContext) :
 
         client.initialize(options)
         ensureSystemEventCollection()
+        ensureLogEventCollection()
 
         promise.resolve(null)
       } catch (throwable: Throwable) {
@@ -140,6 +142,10 @@ class AmplyModule(reactContext: ReactApplicationContext) :
     client.registerDeepLinkListener()
   }
 
+  override fun setUserId(userId: String?) {
+    client.setUserId(userId)
+  }
+
   override fun setLogLevel(level: String) {
     val newLevel = LogLevel.fromString(level)
     client.setLogLevel(newLevel)
@@ -176,6 +182,8 @@ class AmplyModule(reactContext: ReactApplicationContext) :
     deepLinkJob = null
     systemEventsJob?.cancel()
     systemEventsJob = null
+    logEventsJob?.cancel()
+    logEventsJob = null
     lastEmittedDeepLinkId = null
     client.shutdown()
   }
@@ -204,6 +212,16 @@ class AmplyModule(reactContext: ReactApplicationContext) :
         }
       }
       client.registerSystemEventListener()
+    }
+  }
+
+  private fun ensureLogEventCollection() {
+    if (logEventsJob == null) {
+      logEventsJob = scope.launch {
+        client.logEvents.collect { event ->
+          emitOnSystemEvent(event.toWritableMap())
+        }
+      }
     }
   }
 

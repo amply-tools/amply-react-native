@@ -67,6 +67,18 @@ public abstract class NativeAmplyModuleSpec extends ReactContextBaseJavaModule i
 
   @ReactMethod
   @DoNotStrip
+  public abstract void setUserId(String userId);
+
+  @ReactMethod
+  @DoNotStrip
+  public abstract void setLogLevel(String level);
+
+  @ReactMethod(isBlockingSynchronousMethod = true)
+  @DoNotStrip
+  public abstract String getLogLevel();
+
+  @ReactMethod
+  @DoNotStrip
   public abstract void addListener(String eventName);
 
   @ReactMethod

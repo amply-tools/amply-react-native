@@ -86,6 +86,7 @@ namespace JS {
                    resolve:(RCTPromiseResolveBlock)resolve
                     reject:(RCTPromiseRejectBlock)reject;
 - (void)registerDeepLinkListener;
+- (void)setUserId:(NSString * _Nullable)userId;
 - (void)setLogLevel:(NSString *)level;
 - (NSString *)getLogLevel;
 - (void)addListener:(NSString *)eventName;

@@ -42,6 +42,21 @@ static facebook::jsi::Value __hostFunction_NativeAmplyModuleSpecJSI_registerDeep
   return static_cast<JavaTurboModule &>(turboModule).invokeJavaMethod(rt, VoidKind, "registerDeepLinkListener", "()V", args, count, cachedMethodId);
 }
 
+static facebook::jsi::Value __hostFunction_NativeAmplyModuleSpecJSI_setUserId(facebook::jsi::Runtime& rt, TurboModule &turboModule, const facebook::jsi::Value* args, size_t count) {
+  static jmethodID cachedMethodId = nullptr;
+  return static_cast<JavaTurboModule &>(turboModule).invokeJavaMethod(rt, VoidKind, "setUserId", "(Ljava/lang/String;)V", args, count, cachedMethodId);
+}
+
+static facebook::jsi::Value __hostFunction_NativeAmplyModuleSpecJSI_setLogLevel(facebook::jsi::Runtime& rt, TurboModule &turboModule, const facebook::jsi::Value* args, size_t count) {
+  static jmethodID cachedMethodId = nullptr;
+  return static_cast<JavaTurboModule &>(turboModule).invokeJavaMethod(rt, VoidKind, "setLogLevel", "(Ljava/lang/String;)V", args, count, cachedMethodId);
+}
+
+static facebook::jsi::Value __hostFunction_NativeAmplyModuleSpecJSI_getLogLevel(facebook::jsi::Runtime& rt, TurboModule &turboModule, const facebook::jsi::Value* args, size_t count) {
+  static jmethodID cachedMethodId = nullptr;
+  return static_cast<JavaTurboModule &>(turboModule).invokeJavaMethod(rt, StringKind, "getLogLevel", "()Ljava/lang/String;", args, count, cachedMethodId);
+}
+
 static facebook::jsi::Value __hostFunction_NativeAmplyModuleSpecJSI_addListener(facebook::jsi::Runtime& rt, TurboModule &turboModule, const facebook::jsi::Value* args, size_t count) {
   static jmethodID cachedMethodId = nullptr;
   return static_cast<JavaTurboModule &>(turboModule).invokeJavaMethod(rt, VoidKind, "addListener", "(Ljava/lang/String;)V", args, count, cachedMethodId);
@@ -60,6 +75,9 @@ NativeAmplyModuleSpecJSI::NativeAmplyModuleSpecJSI(const JavaTurboModule::InitPa
   methodMap_["getRecentEvents"] = MethodMetadata {1, __hostFunction_NativeAmplyModuleSpecJSI_getRecentEvents};
   methodMap_["getDataSetSnapshot"] = MethodMetadata {1, __hostFunction_NativeAmplyModuleSpecJSI_getDataSetSnapshot};
   methodMap_["registerDeepLinkListener"] = MethodMetadata {0, __hostFunction_NativeAmplyModuleSpecJSI_registerDeepLinkListener};
+  methodMap_["setUserId"] = MethodMetadata {1, __hostFunction_NativeAmplyModuleSpecJSI_setUserId};
+  methodMap_["setLogLevel"] = MethodMetadata {1, __hostFunction_NativeAmplyModuleSpecJSI_setLogLevel};
+  methodMap_["getLogLevel"] = MethodMetadata {0, __hostFunction_NativeAmplyModuleSpecJSI_getLogLevel};
   methodMap_["addListener"] = MethodMetadata {1, __hostFunction_NativeAmplyModuleSpecJSI_addListener};
   methodMap_["removeListeners"] = MethodMetadata {1, __hostFunction_NativeAmplyModuleSpecJSI_removeListeners};
   eventEmitterMap_["onSystemEvent"] = std::make_shared<AsyncEventEmitter<folly::dynamic>>();

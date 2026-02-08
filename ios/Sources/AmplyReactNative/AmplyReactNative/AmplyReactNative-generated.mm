@@ -68,6 +68,10 @@ namespace facebook::react {
       return static_cast<ObjCTurboModule&>(turboModule).invokeObjCMethod(rt, VoidKind, "registerDeepLinkListener", @selector(registerDeepLinkListener), args, count);
     }
 
+    static facebook::jsi::Value __hostFunction_NativeAmplyModuleSpecJSI_setUserId(facebook::jsi::Runtime& rt, TurboModule &turboModule, const facebook::jsi::Value* args, size_t count) {
+      return static_cast<ObjCTurboModule&>(turboModule).invokeObjCMethod(rt, VoidKind, "setUserId", @selector(setUserId:), args, count);
+    }
+
     static facebook::jsi::Value __hostFunction_NativeAmplyModuleSpecJSI_setLogLevel(facebook::jsi::Runtime& rt, TurboModule &turboModule, const facebook::jsi::Value* args, size_t count) {
       return static_cast<ObjCTurboModule&>(turboModule).invokeObjCMethod(rt, VoidKind, "setLogLevel", @selector(setLogLevel:), args, count);
     }
@@ -103,6 +107,9 @@ namespace facebook::react {
         
         
         methodMap_["registerDeepLinkListener"] = MethodMetadata {0, __hostFunction_NativeAmplyModuleSpecJSI_registerDeepLinkListener};
+
+
+        methodMap_["setUserId"] = MethodMetadata {1, __hostFunction_NativeAmplyModuleSpecJSI_setUserId};
 
 
         methodMap_["setLogLevel"] = MethodMetadata {1, __hostFunction_NativeAmplyModuleSpecJSI_setLogLevel};

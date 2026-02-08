@@ -44,11 +44,12 @@ static NSString* AmplyLogLevelToString(AmplyLogLevel level) {
     return @"none";
 }
 
-@interface Amply : NativeAmplyModuleSpecBase <NativeAmplyModuleSpec, ASDKDeepLinkListener, ASDKSystemEventsListener>
+@interface Amply : NativeAmplyModuleSpecBase <NativeAmplyModuleSpec, ASDKDeepLinkListener, ASDKSystemEventsListener, ASDKLogListener>
 @property (nonatomic, strong) ASDKAmply *amplyInstance;
 @property (nonatomic, assign) BOOL deepLinkListenerRegistered;
 @property (nonatomic, assign) BOOL systemEventsListenerRegistered;
 @property (nonatomic, assign) BOOL lifecycleObserversRegistered;
+@property (nonatomic, assign) BOOL logListenerRegistered;
 @property (nonatomic, assign) AmplyLogLevel currentLogLevel;
 @end
 
@@ -113,11 +114,18 @@ RCT_EXPORT_MODULE()
       self.currentLogLevel = AmplyLogLevelNone;
     }
 
-    // Set log level BEFORE creating Amply instance
-    // Logs are printed directly by KMP SDK via println, not emitted to JS
+    // Set log level and listener BEFORE creating Amply instance
+    // so initialization logs are captured and forwarded to JS
     if (self.currentLogLevel != AmplyLogLevelNone) {
       RCTLogInfo(@"[AmplyReactNative] Setting log level to: %@ BEFORE instance creation", AmplyLogLevelToString(self.currentLogLevel));
       [[ASDKLogger shared] setLevelLevel:AmplyLogLevelToString(self.currentLogLevel)];
+
+      // Set log listener to forward logs to JS
+      if (!self.logListenerRegistered) {
+        [[ASDKLogger shared] setListenerListener:self];
+        self.logListenerRegistered = YES;
+        RCTLogInfo(@"[AmplyReactNative] Log listener registered");
+      }
     }
 
     // Create Amply instance (this triggers initialization and config fetch)
@@ -387,11 +395,26 @@ RCT_EXPORT_MODULE()
   RCTLogInfo(@"[AmplyReactNative] removeListeners called with count: %f", count);
 }
 
+- (void)setUserId:(NSString *)userId
+{
+  if (self.amplyInstance) {
+    [self.amplyInstance setUserIdUserId:userId];
+    RCTLogInfo(@"[AmplyReactNative] User ID set to: %@", userId ?: @"<null>");
+  }
+}
+
 - (void)setLogLevel:(NSString *)level
 {
   self.currentLogLevel = AmplyLogLevelFromString(level);
   RCTLogInfo(@"[AmplyReactNative] Log level set to: %@", level);
   [[ASDKLogger shared] setLevelLevel:level];
+
+  // Register log listener if not already registered and level is not none
+  if (self.currentLogLevel != AmplyLogLevelNone && !self.logListenerRegistered) {
+    [[ASDKLogger shared] setListenerListener:self];
+    self.logListenerRegistered = YES;
+    RCTLogInfo(@"[AmplyReactNative] Log listener registered via setLogLevel");
+  }
 }
 
 - (NSString *)getLogLevel
@@ -468,6 +491,46 @@ RCT_EXPORT_MODULE()
     @"type": @"system",
     @"timestamp": @(event.timestamp),
     @"properties": event.properties ?: @{}
+  };
+
+  [self emitOnSystemEvent:payload];
+}
+
+#pragma mark - ASDKLogListener
+
+- (void)onLogEntry:(ASDKLogEntry *)entry
+{
+  // Forward log entries to JS as DebugLog events via the system event channel
+  NSString *levelStr = @"debug";
+  switch (entry.level) {
+    case ASDKLogLevelError:
+      levelStr = @"error";
+      break;
+    case ASDKLogLevelWarn:
+      levelStr = @"warn";
+      break;
+    case ASDKLogLevelInfo:
+      levelStr = @"info";
+      break;
+    case ASDKLogLevelDebug:
+    default:
+      levelStr = @"debug";
+      break;
+  }
+
+  NSMutableDictionary *properties = [NSMutableDictionary dictionary];
+  properties[@"level"] = levelStr;
+  properties[@"category"] = entry.category ?: @"sdk";
+  properties[@"message"] = entry.message ?: @"";
+  if (entry.details) {
+    properties[@"details"] = entry.details;
+  }
+
+  NSDictionary *payload = @{
+    @"name": @"DebugLog",
+    @"type": @"log",
+    @"timestamp": @(entry.timestamp),
+    @"properties": properties
   };
 
   [self emitOnSystemEvent:payload];

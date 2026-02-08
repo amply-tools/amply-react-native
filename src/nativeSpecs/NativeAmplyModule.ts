@@ -92,6 +92,11 @@ export interface Spec extends TurboModule {
   getDataSetSnapshot(type: DataSetType): Promise<DataSetSnapshot>;
   registerDeepLinkListener(): void;
   /**
+   * Set the user ID for analytics. Pass null to clear.
+   * @param userId The user ID to set, or null to clear
+   */
+  setUserId(userId: string | null): void;
+  /**
    * Set the log level at runtime.
    * @param level The log level to set
    */
