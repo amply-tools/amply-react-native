@@ -1,5 +1,5 @@
 import getNativeModule from './nativeModule';
-import {addSystemEventListener as addSystemEventListenerInternal} from './systemEvents';
+import {addSystemEventListenerRaw, addSystemEventListener as addSystemEventListenerInternal} from './systemEvents';
 export {useAmplySystemEvents} from './hooks/useAmplySystemEvents';
 export {formatSystemEventLabel} from './systemEventUtils';
 export type {FormatOptions} from './systemEventUtils';
@@ -30,7 +30,8 @@ function formatDebugLog(event: EventRecord): string {
   const category = props.category
     ? props.category.charAt(0).toUpperCase() + props.category.slice(1)
     : 'Sdk';
-  return `[Amply.${category}][${level}] ${props.message || ''}`;
+  const timestamp = new Date(event.timestamp).toISOString();
+  return `[${timestamp}][Amply.${category}][${level}] ${props.message || ''}`;
 }
 
 /**
@@ -42,7 +43,7 @@ function ensureDebugLogListener(): void {
   }
   debugLogListenerRegistered = true;
 
-  addSystemEventListenerInternal((event: EventRecord) => {
+  addSystemEventListenerRaw((event: EventRecord) => {
     if (event.name === 'DebugLog') {
       const formattedLog = formatDebugLog(event);
       const props = event.properties as {level?: string};

@@ -455,6 +455,11 @@ RCT_EXPORT_MODULE()
                                                name:UIApplicationWillEnterForegroundNotification
                                              object:nil];
 
+  [[NSNotificationCenter defaultCenter] addObserver:self
+                                           selector:@selector(handleAppWillTerminate:)
+                                               name:UIApplicationWillTerminateNotification
+                                             object:nil];
+
   self.lifecycleObserversRegistered = YES;
   RCTLogInfo(@"[AmplyReactNative] App lifecycle observers registered");
 }
@@ -472,6 +477,14 @@ RCT_EXPORT_MODULE()
   RCTLogInfo(@"[AmplyReactNative] App entering foreground - resuming session");
   if (self.amplyInstance) {
     [self.amplyInstance resumeSession];
+  }
+}
+
+- (void)handleAppWillTerminate:(NSNotification *)notification
+{
+  RCTLogInfo(@"[AmplyReactNative] App terminating - stopping session");
+  if (self.amplyInstance) {
+    [self.amplyInstance stopSession];
   }
 }
 

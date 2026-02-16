@@ -69,7 +69,20 @@ describe('Amply JS API', () => {
     const listener = jest.fn();
     const unsubscribe = await Amply.addSystemEventListener(listener);
 
-    expect(mockNativeModule.onSystemEvent).toHaveBeenCalledWith(listener);
+    expect(mockNativeModule.onSystemEvent).toHaveBeenCalledTimes(1);
+
+    // The native listener is a wrapper that filters DebugLog events
+    const nativeListener = mockNativeModule.onSystemEvent.mock.calls[0][0];
+
+    // DebugLog events should be filtered out
+    nativeListener({ name: 'DebugLog', type: 'log', timestamp: 1, properties: {} });
+    expect(listener).not.toHaveBeenCalled();
+
+    // Other events should pass through
+    const systemEvent = { name: 'SessionStart', type: 'system', timestamp: 2, properties: {} };
+    nativeListener(systemEvent);
+    expect(listener).toHaveBeenCalledWith(systemEvent);
+
     unsubscribe();
     expect(remove).toHaveBeenCalledTimes(1);
   });
