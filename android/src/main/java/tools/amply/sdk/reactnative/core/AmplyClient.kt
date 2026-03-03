@@ -31,6 +31,12 @@ interface AmplyClient {
   fun setLogLevel(level: LogLevel)
   fun getLogLevel(): LogLevel
 
+  fun setCustomProperty(key: String, value: Any)
+  fun setCustomProperties(properties: Map<String, Any?>)
+  fun removeCustomProperty(key: String)
+  fun clearCustomProperties()
+  suspend fun getCustomProperty(key: String): Any?
+
   fun onHostResume(activity: Activity?)
 
   fun shutdown()

@@ -24,6 +24,7 @@ This document provides a comprehensive overview of the Amply React Native SDK's 
 The Amply React Native SDK is a **TurboModule bridge** that connects React Native applications to the **Amply Kotlin Multiplatform (KMP) SDK**. It enables:
 
 - **Event tracking** – Custom and system event collection
+- **Custom properties** – Persistent user attributes (string, number, boolean)
 - **Deeplink campaign handling** – Parse and respond to deep link campaigns
 - **Real-time data access** – Query device, user, and session datasets
 - **Event inspection** – Retrieve recent tracked events for debugging
@@ -54,6 +55,7 @@ The Amply React Native SDK is a **TurboModule bridge** that connects React Nativ
         │  Amply KMP SDK                  │
         │  (tools.amply.sdk.Amply)       │
         │  - Event tracking              │
+        │  - Custom properties           │
         │  - Dataset management          │
         │  - Deeplink routing            │
         └─────────────────────────────────┘
@@ -149,6 +151,13 @@ export interface Spec extends TurboModule {
   track(payload: TrackEventPayload): Promise<void>;
   getRecentEvents(limit: number): Promise<EventRecord[]>;
   getDataSetSnapshot(type: DataSetType): Promise<DataSetSnapshot>;
+  setUserId(userId: string | null): void;
+  setLogLevel(level: string): void;
+  getLogLevel(): string;
+  setCustomProperties(properties: JsonMap): void;
+  getCustomProperty(key: string): Promise<JsonMap>;
+  removeCustomProperty(key: string): void;
+  clearCustomProperties(): void;
   readonly onSystemEvent: EventEmitter<SystemEventPayload>;
   readonly onDeepLink: EventEmitter<DeepLinkEvent>;
 }
@@ -751,14 +760,11 @@ Each step is separate because:
 
 ### iOS Support
 
-**Current state:** iOS placeholder with stub implementation
+**Current state:** iOS implementation complete in `AmplyModule.mm` (Objective-C++ TurboModule wrapping the KMP SDK via XCFramework). All features have parity with Android: event tracking, custom properties, deep links, system events, logging, and dataset snapshots.
 
-**Future steps:**
-1. Amply ships iOS SDK (Swift + Objective-C++)
-2. Mirror Kotlin implementation in Swift
-3. Implement EventEmitter event streaming (Obj-C++)
-4. Wire up deep link detection
-5. Test with iOS example app
+**Remaining work:**
+- XCFramework distribution setup (CocoaPods / SPM)
+- End-to-end testing with iOS example app
 
 **No changes needed to:**
 - JavaScript API (same for both platforms)
@@ -767,15 +773,67 @@ Each step is separate because:
 
 ### Advanced Features
 
-These are deferred until the Amply KMP SDK exposes corresponding methods:
-
 | Feature | What it does | Status |
 |---------|-------------|--------|
-| `identify(userId)` | Associate user ID with events | TODO (KMP SDK support needed) |
-| `setUserProperty(key, value)` | Store persistent user attributes | TODO (KMP SDK support needed) |
+| `setUserId(userId)` | Associate user ID with events | ✅ Implemented |
+| `setCustomProperty(key, value)` | Store a persistent custom property | ✅ Implemented |
+| `setCustomProperties(props)` | Store multiple custom properties at once | ✅ Implemented |
+| `getCustomProperty(key)` | Retrieve a custom property value | ✅ Implemented |
+| `removeCustomProperty(key)` | Remove a custom property | ✅ Implemented |
+| `clearCustomProperties()` | Remove all custom properties | ✅ Implemented |
+| `setLogLevel(level)` | Control SDK logging verbosity | ✅ Implemented |
+| `getLogLevel()` | Get current SDK log level | ✅ Implemented |
 | `flush()` | Send events immediately (don't wait for batch) | TODO (KMP SDK support needed) |
-| `setLogLevel()` | Control SDK logging verbosity | TODO (KMP SDK support needed) |
 | `trackSystemEvent()` | Manually emit system events | TODO (KMP SDK support needed) |
+
+#### Custom Properties
+
+Custom properties are persistent user attributes stored by the KMP SDK (in-memory cache + Room database). They are included in session payloads sent to the backend and can be used for campaign targeting via the `@custom` dataset.
+
+**Supported value types:** `string`, `number`, `boolean`
+
+**Usage:**
+
+```typescript
+import Amply from '@amplytools/react-native-amply-sdk';
+
+// Set individual properties
+Amply.setCustomProperty('plan', 'premium');
+Amply.setCustomProperty('age', 25);
+Amply.setCustomProperty('premium', true);
+
+// Set multiple properties at once
+Amply.setCustomProperties({ plan: 'premium', age: 25, active: true });
+
+// Retrieve a property
+const plan = await Amply.getCustomProperty('plan'); // 'premium'
+
+// Remove a single property
+Amply.removeCustomProperty('plan');
+
+// Clear all custom properties
+Amply.clearCustomProperties();
+```
+
+**Constraints (enforced by KMP SDK):**
+- Property keys: max 32 characters
+- String values: max 255 characters
+
+**Architecture:**
+
+```
+JS: setCustomProperty('plan', 'premium')
+    ↓ calls setCustomProperties({plan: 'premium'})
+TurboModule: setCustomProperties(ReadableMap)
+    ↓
+AmplyModule.kt → client.setCustomProperties(props)
+    ↓
+DefaultAmplyClient → instance.setCustomProperty(key, value)
+    ↓
+KMP SDK → in-memory cache + Room DB persistence
+    ↓
+Included in next session payload → backend API
+```
 
 ---
 
@@ -849,10 +907,13 @@ These are deferred until the Amply KMP SDK exposes corresponding methods:
 1. Add method to the `Spec` interface in `src/nativeSpecs/NativeAmplyModule.ts`
 2. Update TypeScript API in `src/index.ts` (export wrapper)
 3. Add type exports to spec file
-4. Run `yarn codegen` to generate native stubs
-5. Implement method in `android/src/main/java/com/amply/reactnative/AmplyModule.kt`
-6. Write tests in `src/__tests__/`
-7. Commit generated files + new code
+4. Run `yarn codegen` to generate native stubs (or update `NativeAmplyModuleSpec.java` manually)
+5. Add method signature to `AmplyClient.kt` interface
+6. Implement in `DefaultAmplyClient.kt` (delegate to KMP SDK)
+7. Implement in `AmplyModule.kt` (Android TurboModule bridge)
+8. Implement in `AmplyModule.mm` (iOS TurboModule bridge)
+9. Write tests in `src/__tests__/`
+10. Commit generated files + new code
 
 ### Adding System Event Type
 

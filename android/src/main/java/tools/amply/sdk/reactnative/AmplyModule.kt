@@ -155,6 +155,34 @@ class AmplyModule(reactContext: ReactApplicationContext) :
     return client.getLogLevel().toString()
   }
 
+  override fun setCustomProperties(properties: ReadableMap) {
+    val props = properties.toHashMap()
+    client.setCustomProperties(props)
+  }
+
+  override fun getCustomProperty(key: String, promise: Promise) {
+    scope.launch {
+      try {
+        val value = client.getCustomProperty(key)
+        val result = Arguments.createMap()
+        if (value != null) {
+          result.putDynamic("value", value)
+        }
+        promise.resolve(result)
+      } catch (throwable: Throwable) {
+        promise.reject(CUSTOM_PROP_ERROR, throwable)
+      }
+    }
+  }
+
+  override fun removeCustomProperty(key: String) {
+    client.removeCustomProperty(key)
+  }
+
+  override fun clearCustomProperties() {
+    client.clearCustomProperties()
+  }
+
   override fun addListener(eventName: String) {
     // Required by RN EventEmitter contracts. The native TurboModule infrastructure
     // handles the actual listener bookkeeping through the C++ event emitter.
@@ -415,5 +443,6 @@ class AmplyModule(reactContext: ReactApplicationContext) :
     private const val TRACK_ERROR = "AMP_TRACK_FAILED"
     private const val EVENTS_ERROR = "AMP_EVENTS_FAILED"
     private const val DATASET_ERROR = "AMP_DATASET_FAILED"
+    private const val CUSTOM_PROP_ERROR = "AMP_CUSTOM_PROP_FAILED"
   }
 }

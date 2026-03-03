@@ -12,6 +12,10 @@ const mockNativeModule = {
   removeListeners: jest.fn(),
   onSystemEvent: jest.fn(),
   onDeepLink: jest.fn(),
+  setCustomProperties: jest.fn(),
+  getCustomProperty: jest.fn(),
+  removeCustomProperty: jest.fn(),
+  clearCustomProperties: jest.fn(),
 };
 
 describe('Amply JS API', () => {
@@ -85,6 +89,53 @@ describe('Amply JS API', () => {
 
     unsubscribe();
     expect(remove).toHaveBeenCalledTimes(1);
+  });
+
+  it('sets a single custom property via setCustomProperties', () => {
+    Amply.setCustomProperty('plan', 'premium');
+
+    expect(mockNativeModule.setCustomProperties).toHaveBeenCalledWith({
+      plan: 'premium',
+    });
+  });
+
+  it('sets multiple custom properties at once', () => {
+    Amply.setCustomProperties({ plan: 'premium', age: 25, active: true });
+
+    expect(mockNativeModule.setCustomProperties).toHaveBeenCalledWith({
+      plan: 'premium',
+      age: 25,
+      active: true,
+    });
+  });
+
+  it('gets a custom property value', async () => {
+    mockNativeModule.getCustomProperty.mockResolvedValueOnce({ value: 'premium' });
+
+    const result = await Amply.getCustomProperty('plan');
+
+    expect(mockNativeModule.getCustomProperty).toHaveBeenCalledWith('plan');
+    expect(result).toBe('premium');
+  });
+
+  it('returns null for a missing custom property', async () => {
+    mockNativeModule.getCustomProperty.mockResolvedValueOnce({});
+
+    const result = await Amply.getCustomProperty('nonexistent');
+
+    expect(result).toBeNull();
+  });
+
+  it('removes a custom property', () => {
+    Amply.removeCustomProperty('plan');
+
+    expect(mockNativeModule.removeCustomProperty).toHaveBeenCalledWith('plan');
+  });
+
+  it('clears all custom properties', () => {
+    Amply.clearCustomProperties();
+
+    expect(mockNativeModule.clearCustomProperties).toHaveBeenCalled();
   });
 
   it('registers deep links once and subscribes via the TurboModule emitter', async () => {

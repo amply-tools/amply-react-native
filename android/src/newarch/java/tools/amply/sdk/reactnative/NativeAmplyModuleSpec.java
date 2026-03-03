@@ -79,6 +79,22 @@ public abstract class NativeAmplyModuleSpec extends ReactContextBaseJavaModule i
 
   @ReactMethod
   @DoNotStrip
+  public abstract void setCustomProperties(ReadableMap properties);
+
+  @ReactMethod
+  @DoNotStrip
+  public abstract void getCustomProperty(String key, Promise promise);
+
+  @ReactMethod
+  @DoNotStrip
+  public abstract void removeCustomProperty(String key);
+
+  @ReactMethod
+  @DoNotStrip
+  public abstract void clearCustomProperties();
+
+  @ReactMethod
+  @DoNotStrip
   public abstract void addListener(String eventName);
 
   @ReactMethod

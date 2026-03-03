@@ -106,6 +106,26 @@ export interface Spec extends TurboModule {
    * @returns The current log level as a string
    */
   getLogLevel(): string;
+  /**
+   * Set one or more custom properties. Values can be string, number, or boolean.
+   * @param properties Key-value map of properties to set
+   */
+  setCustomProperties(properties: JsonMap): void;
+  /**
+   * Get a custom property value by key.
+   * @param key The property key
+   * @returns A map containing the value, or an empty map if not found
+   */
+  getCustomProperty(key: string): Promise<JsonMap>;
+  /**
+   * Remove a custom property by key.
+   * @param key The property key to remove
+   */
+  removeCustomProperty(key: string): void;
+  /**
+   * Remove all custom properties.
+   */
+  clearCustomProperties(): void;
   readonly onSystemEvent: EventEmitter<SystemEventPayload>;
   readonly onDeepLink: EventEmitter<DeepLinkEvent>;
   addListener(eventName: string): void;

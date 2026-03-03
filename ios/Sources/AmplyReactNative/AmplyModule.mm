@@ -383,6 +383,74 @@ RCT_EXPORT_MODULE()
   return YES; // Tell SDK we handled it
 }
 
+- (void)setCustomProperties:(NSDictionary *)properties
+{
+  if (!self.amplyInstance) {
+    RCTLogWarn(@"[AmplyReactNative] Cannot set custom properties - Amply not initialized");
+    return;
+  }
+
+  for (NSString *key in properties) {
+    id value = properties[key];
+    if (value && ![value isKindOfClass:[NSNull class]]) {
+      [self.amplyInstance setCustomPropertyKey:key value:value];
+    }
+  }
+  RCTLogInfo(@"[AmplyReactNative] Custom properties set: %@", [properties allKeys]);
+}
+
+- (void)getCustomProperty:(NSString *)key
+                   resolve:(RCTPromiseResolveBlock)resolve
+                    reject:(RCTPromiseRejectBlock)reject
+{
+  if (!self.amplyInstance) {
+    if (reject) {
+      reject(@"AMP_NOT_INITIALIZED", @"Amply has not been initialized yet", nil);
+    }
+    return;
+  }
+
+  [self.amplyInstance getCustomPropertyKey:key completionHandler:^(id _Nullable_result value, NSError * _Nullable error) {
+    if (error) {
+      if (reject) {
+        reject(@"AMP_CUSTOM_PROP_FAILED", error.localizedDescription, error);
+      }
+      return;
+    }
+
+    NSMutableDictionary *result = [NSMutableDictionary dictionary];
+    if (value && ![value isKindOfClass:[NSNull class]]) {
+      result[@"value"] = value;
+    }
+
+    if (resolve) {
+      resolve(result);
+    }
+  }];
+}
+
+- (void)removeCustomProperty:(NSString *)key
+{
+  if (!self.amplyInstance) {
+    RCTLogWarn(@"[AmplyReactNative] Cannot remove custom property - Amply not initialized");
+    return;
+  }
+
+  [self.amplyInstance removeCustomPropertyKey:key];
+  RCTLogInfo(@"[AmplyReactNative] Custom property removed: %@", key);
+}
+
+- (void)clearCustomProperties
+{
+  if (!self.amplyInstance) {
+    RCTLogWarn(@"[AmplyReactNative] Cannot clear custom properties - Amply not initialized");
+    return;
+  }
+
+  [self.amplyInstance clearCustomProperties];
+  RCTLogInfo(@"[AmplyReactNative] All custom properties cleared");
+}
+
 - (void)addListener:(NSString *)eventName
 {
   // Required by RN EventEmitter contracts.

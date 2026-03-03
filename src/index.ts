@@ -154,6 +154,54 @@ export async function addSystemEventListener(
   return addSystemEventListenerInternal(listener);
 }
 
+/**
+ * Custom property value type. Supports string, number, and boolean values.
+ */
+export type CustomPropertyValue = string | number | boolean;
+
+/**
+ * Set a single custom property.
+ * @param key The property key (max 32 characters)
+ * @param value The property value (string max 255 characters)
+ */
+export function setCustomProperty(key: string, value: CustomPropertyValue): void {
+  getNativeModule().setCustomProperties({[key]: value});
+}
+
+/**
+ * Set multiple custom properties at once.
+ * @param properties Key-value map of properties to set
+ */
+export function setCustomProperties(properties: Record<string, CustomPropertyValue>): void {
+  getNativeModule().setCustomProperties(properties);
+}
+
+/**
+ * Get a custom property value by key.
+ * @param key The property key
+ * @returns The property value, or null if not found
+ */
+export async function getCustomProperty(key: string): Promise<CustomPropertyValue | null> {
+  const result = await getNativeModule().getCustomProperty(key);
+  const map = result as {value?: unknown};
+  return (map.value as CustomPropertyValue) ?? null;
+}
+
+/**
+ * Remove a custom property by key.
+ * @param key The property key to remove
+ */
+export function removeCustomProperty(key: string): void {
+  getNativeModule().removeCustomProperty(key);
+}
+
+/**
+ * Remove all custom properties.
+ */
+export function clearCustomProperties(): void {
+  getNativeModule().clearCustomProperties();
+}
+
 export function removeAllListeners(): void {
   deepLinkSubscriptions.forEach(unsubscribe => {
     try {
@@ -198,5 +246,10 @@ export default {
   setUserId,
   setLogLevel,
   getLogLevel,
+  setCustomProperty,
+  setCustomProperties,
+  getCustomProperty,
+  removeCustomProperty,
+  clearCustomProperties,
   systemEvents,
 };

@@ -217,6 +217,37 @@ class DefaultAmplyClient(
     android.util.Log.i("AmplyReactNative", "User ID set to: ${userId ?: "<null>"}")
   }
 
+  override fun setCustomProperty(key: String, value: Any) {
+    val instance = requireInstance()
+    instance.setCustomProperty(key, value)
+    android.util.Log.i("AmplyReactNative", "Custom property set: $key")
+  }
+
+  override fun setCustomProperties(properties: Map<String, Any?>) {
+    val instance = requireInstance()
+    instance.setCustomProperties(properties.toNonNullMap())
+    android.util.Log.i("AmplyReactNative", "Custom properties set: ${properties.keys}")
+  }
+
+  override fun removeCustomProperty(key: String) {
+    val instance = requireInstance()
+    instance.removeCustomProperty(key)
+    android.util.Log.i("AmplyReactNative", "Custom property removed: $key")
+  }
+
+  override fun clearCustomProperties() {
+    val instance = requireInstance()
+    instance.clearCustomProperties()
+    android.util.Log.i("AmplyReactNative", "All custom properties cleared")
+  }
+
+  override suspend fun getCustomProperty(key: String): Any? {
+    val instance = requireInstance()
+    return withContext(Dispatchers.IO) {
+      instance.getCustomProperty(key)
+    }
+  }
+
   override fun setLogLevel(level: tools.amply.sdk.reactnative.model.LogLevel) {
     val instance = amplyInstance ?: return
     instance.setLogLevel(level.toString())
