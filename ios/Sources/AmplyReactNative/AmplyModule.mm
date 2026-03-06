@@ -51,6 +51,7 @@ static NSString* AmplyLogLevelToString(AmplyLogLevel level) {
 @property (nonatomic, assign) BOOL lifecycleObserversRegistered;
 @property (nonatomic, assign) BOOL logListenerRegistered;
 @property (nonatomic, assign) AmplyLogLevel currentLogLevel;
+@property (nonatomic, strong) NSMutableArray<void (^)(ASDKAmply *)> *pendingPropertyOps;
 @end
 
 @implementation Amply
@@ -136,6 +137,15 @@ RCT_EXPORT_MODULE()
 
     // Register for app lifecycle notifications to manage session state
     [self registerLifecycleObservers];
+
+    // Drain buffered property operations
+    if (self.pendingPropertyOps.count > 0) {
+      RCTLogInfo(@"[AmplyReactNative] Draining %lu buffered property operations", (unsigned long)self.pendingPropertyOps.count);
+      for (void (^op)(ASDKAmply *) in self.pendingPropertyOps) {
+        op(self.amplyInstance);
+      }
+      [self.pendingPropertyOps removeAllObjects];
+    }
 
     RCTLogInfo(@"[AmplyReactNative] Initialized with appId=%@", appId);
 
@@ -385,18 +395,23 @@ RCT_EXPORT_MODULE()
 
 - (void)setCustomProperties:(NSDictionary *)properties
 {
-  if (!self.amplyInstance) {
-    RCTLogWarn(@"[AmplyReactNative] Cannot set custom properties - Amply not initialized");
-    return;
-  }
-
-  for (NSString *key in properties) {
-    id value = properties[key];
-    if (value && ![value isKindOfClass:[NSNull class]]) {
-      [self.amplyInstance setCustomPropertyKey:key value:value];
+  void (^apply)(ASDKAmply *) = ^(ASDKAmply *instance) {
+    for (NSString *key in properties) {
+      id value = properties[key];
+      if (value && ![value isKindOfClass:[NSNull class]]) {
+        [instance setCustomPropertyKey:key value:value];
+      }
     }
+    RCTLogInfo(@"[AmplyReactNative] Custom properties set: %@", [properties allKeys]);
+  };
+
+  if (self.amplyInstance) {
+    apply(self.amplyInstance);
+  } else {
+    RCTLogInfo(@"[AmplyReactNative] Buffering setCustomProperties until init: %@", [properties allKeys]);
+    if (!self.pendingPropertyOps) self.pendingPropertyOps = [NSMutableArray new];
+    [self.pendingPropertyOps addObject:apply];
   }
-  RCTLogInfo(@"[AmplyReactNative] Custom properties set: %@", [properties allKeys]);
 }
 
 - (void)getCustomProperty:(NSString *)key
@@ -431,24 +446,34 @@ RCT_EXPORT_MODULE()
 
 - (void)removeCustomProperty:(NSString *)key
 {
-  if (!self.amplyInstance) {
-    RCTLogWarn(@"[AmplyReactNative] Cannot remove custom property - Amply not initialized");
-    return;
-  }
+  void (^apply)(ASDKAmply *) = ^(ASDKAmply *instance) {
+    [instance removeCustomPropertyKey:key];
+    RCTLogInfo(@"[AmplyReactNative] Custom property removed: %@", key);
+  };
 
-  [self.amplyInstance removeCustomPropertyKey:key];
-  RCTLogInfo(@"[AmplyReactNative] Custom property removed: %@", key);
+  if (self.amplyInstance) {
+    apply(self.amplyInstance);
+  } else {
+    RCTLogInfo(@"[AmplyReactNative] Buffering removeCustomProperty until init: %@", key);
+    if (!self.pendingPropertyOps) self.pendingPropertyOps = [NSMutableArray new];
+    [self.pendingPropertyOps addObject:apply];
+  }
 }
 
 - (void)clearCustomProperties
 {
-  if (!self.amplyInstance) {
-    RCTLogWarn(@"[AmplyReactNative] Cannot clear custom properties - Amply not initialized");
-    return;
-  }
+  void (^apply)(ASDKAmply *) = ^(ASDKAmply *instance) {
+    [instance clearCustomProperties];
+    RCTLogInfo(@"[AmplyReactNative] All custom properties cleared");
+  };
 
-  [self.amplyInstance clearCustomProperties];
-  RCTLogInfo(@"[AmplyReactNative] All custom properties cleared");
+  if (self.amplyInstance) {
+    apply(self.amplyInstance);
+  } else {
+    RCTLogInfo(@"[AmplyReactNative] Buffering clearCustomProperties until init");
+    if (!self.pendingPropertyOps) self.pendingPropertyOps = [NSMutableArray new];
+    [self.pendingPropertyOps addObject:apply];
+  }
 }
 
 - (void)addListener:(NSString *)eventName

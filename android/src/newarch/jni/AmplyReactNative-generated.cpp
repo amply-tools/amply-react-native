@@ -57,6 +57,26 @@ static facebook::jsi::Value __hostFunction_NativeAmplyModuleSpecJSI_getLogLevel(
   return static_cast<JavaTurboModule &>(turboModule).invokeJavaMethod(rt, StringKind, "getLogLevel", "()Ljava/lang/String;", args, count, cachedMethodId);
 }
 
+static facebook::jsi::Value __hostFunction_NativeAmplyModuleSpecJSI_setCustomProperties(facebook::jsi::Runtime& rt, TurboModule &turboModule, const facebook::jsi::Value* args, size_t count) {
+  static jmethodID cachedMethodId = nullptr;
+  return static_cast<JavaTurboModule &>(turboModule).invokeJavaMethod(rt, VoidKind, "setCustomProperties", "(Lcom/facebook/react/bridge/ReadableMap;)V", args, count, cachedMethodId);
+}
+
+static facebook::jsi::Value __hostFunction_NativeAmplyModuleSpecJSI_getCustomProperty(facebook::jsi::Runtime& rt, TurboModule &turboModule, const facebook::jsi::Value* args, size_t count) {
+  static jmethodID cachedMethodId = nullptr;
+  return static_cast<JavaTurboModule &>(turboModule).invokeJavaMethod(rt, PromiseKind, "getCustomProperty", "(Ljava/lang/String;Lcom/facebook/react/bridge/Promise;)V", args, count, cachedMethodId);
+}
+
+static facebook::jsi::Value __hostFunction_NativeAmplyModuleSpecJSI_removeCustomProperty(facebook::jsi::Runtime& rt, TurboModule &turboModule, const facebook::jsi::Value* args, size_t count) {
+  static jmethodID cachedMethodId = nullptr;
+  return static_cast<JavaTurboModule &>(turboModule).invokeJavaMethod(rt, VoidKind, "removeCustomProperty", "(Ljava/lang/String;)V", args, count, cachedMethodId);
+}
+
+static facebook::jsi::Value __hostFunction_NativeAmplyModuleSpecJSI_clearCustomProperties(facebook::jsi::Runtime& rt, TurboModule &turboModule, const facebook::jsi::Value* args, size_t count) {
+  static jmethodID cachedMethodId = nullptr;
+  return static_cast<JavaTurboModule &>(turboModule).invokeJavaMethod(rt, VoidKind, "clearCustomProperties", "()V", args, count, cachedMethodId);
+}
+
 static facebook::jsi::Value __hostFunction_NativeAmplyModuleSpecJSI_addListener(facebook::jsi::Runtime& rt, TurboModule &turboModule, const facebook::jsi::Value* args, size_t count) {
   static jmethodID cachedMethodId = nullptr;
   return static_cast<JavaTurboModule &>(turboModule).invokeJavaMethod(rt, VoidKind, "addListener", "(Ljava/lang/String;)V", args, count, cachedMethodId);
@@ -78,6 +98,10 @@ NativeAmplyModuleSpecJSI::NativeAmplyModuleSpecJSI(const JavaTurboModule::InitPa
   methodMap_["setUserId"] = MethodMetadata {1, __hostFunction_NativeAmplyModuleSpecJSI_setUserId};
   methodMap_["setLogLevel"] = MethodMetadata {1, __hostFunction_NativeAmplyModuleSpecJSI_setLogLevel};
   methodMap_["getLogLevel"] = MethodMetadata {0, __hostFunction_NativeAmplyModuleSpecJSI_getLogLevel};
+  methodMap_["setCustomProperties"] = MethodMetadata {1, __hostFunction_NativeAmplyModuleSpecJSI_setCustomProperties};
+  methodMap_["getCustomProperty"] = MethodMetadata {1, __hostFunction_NativeAmplyModuleSpecJSI_getCustomProperty};
+  methodMap_["removeCustomProperty"] = MethodMetadata {1, __hostFunction_NativeAmplyModuleSpecJSI_removeCustomProperty};
+  methodMap_["clearCustomProperties"] = MethodMetadata {0, __hostFunction_NativeAmplyModuleSpecJSI_clearCustomProperties};
   methodMap_["addListener"] = MethodMetadata {1, __hostFunction_NativeAmplyModuleSpecJSI_addListener};
   methodMap_["removeListeners"] = MethodMetadata {1, __hostFunction_NativeAmplyModuleSpecJSI_removeListeners};
   eventEmitterMap_["onSystemEvent"] = std::make_shared<AsyncEventEmitter<folly::dynamic>>();

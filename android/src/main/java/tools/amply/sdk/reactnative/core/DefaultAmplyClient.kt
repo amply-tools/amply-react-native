@@ -36,7 +36,9 @@ class DefaultAmplyClient(
 ) : AmplyClient {
 
   private val mutex = Mutex()
-  private var amplyInstance: Amply? = null
+  @Volatile private var amplyInstance: Amply? = null
+  private val propertyLock = Any()
+  private val pendingPropertyOps = mutableListOf<(Amply) -> Unit>()
   private val deepLinkRegistered = AtomicBoolean(false)
   private val systemEventsRegistered = AtomicBoolean(false)
   private val deepLinkSequence = AtomicLong(0L)
@@ -100,7 +102,17 @@ class DefaultAmplyClient(
         }
 
         ensureSystemEventsListener(instance)
-        amplyInstance = instance
+
+        // Drain buffered property operations under propertyLock
+        synchronized(propertyLock) {
+          amplyInstance = instance
+          if (pendingPropertyOps.isNotEmpty()) {
+            android.util.Log.i("AmplyReactNative", "Draining ${pendingPropertyOps.size} buffered property operations")
+            pendingPropertyOps.forEach { op -> op(instance) }
+            pendingPropertyOps.clear()
+          }
+        }
+
         createdInstance = true
       }
     }
@@ -218,27 +230,56 @@ class DefaultAmplyClient(
   }
 
   override fun setCustomProperty(key: String, value: Any) {
-    val instance = requireInstance()
-    instance.setCustomProperty(key, value)
-    android.util.Log.i("AmplyReactNative", "Custom property set: $key")
+    synchronized(propertyLock) {
+      val instance = amplyInstance
+      if (instance != null) {
+        instance.setCustomProperty(key, value)
+        android.util.Log.i("AmplyReactNative", "Custom property set: $key")
+      } else {
+        android.util.Log.i("AmplyReactNative", "Buffering setCustomProperty until init: $key")
+        pendingPropertyOps.add { it.setCustomProperty(key, value) }
+      }
+    }
   }
 
   override fun setCustomProperties(properties: Map<String, Any?>) {
-    val instance = requireInstance()
-    instance.setCustomProperties(properties.toNonNullMap())
-    android.util.Log.i("AmplyReactNative", "Custom properties set: ${properties.keys}")
+    synchronized(propertyLock) {
+      val instance = amplyInstance
+      if (instance != null) {
+        instance.setCustomProperties(properties.toNonNullMap())
+        android.util.Log.i("AmplyReactNative", "Custom properties set: ${properties.keys}")
+      } else {
+        android.util.Log.i("AmplyReactNative", "Buffering setCustomProperties until init: ${properties.keys}")
+        val snapshot = properties.toNonNullMap()
+        pendingPropertyOps.add { it.setCustomProperties(snapshot) }
+      }
+    }
   }
 
   override fun removeCustomProperty(key: String) {
-    val instance = requireInstance()
-    instance.removeCustomProperty(key)
-    android.util.Log.i("AmplyReactNative", "Custom property removed: $key")
+    synchronized(propertyLock) {
+      val instance = amplyInstance
+      if (instance != null) {
+        instance.removeCustomProperty(key)
+        android.util.Log.i("AmplyReactNative", "Custom property removed: $key")
+      } else {
+        android.util.Log.i("AmplyReactNative", "Buffering removeCustomProperty until init: $key")
+        pendingPropertyOps.add { it.removeCustomProperty(key) }
+      }
+    }
   }
 
   override fun clearCustomProperties() {
-    val instance = requireInstance()
-    instance.clearCustomProperties()
-    android.util.Log.i("AmplyReactNative", "All custom properties cleared")
+    synchronized(propertyLock) {
+      val instance = amplyInstance
+      if (instance != null) {
+        instance.clearCustomProperties()
+        android.util.Log.i("AmplyReactNative", "All custom properties cleared")
+      } else {
+        android.util.Log.i("AmplyReactNative", "Buffering clearCustomProperties until init")
+        pendingPropertyOps.add { it.clearCustomProperties() }
+      }
+    }
   }
 
   override suspend fun getCustomProperty(key: String): Any? {

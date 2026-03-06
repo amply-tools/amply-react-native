@@ -20,6 +20,7 @@ import com.facebook.react.bridge.ReactMethod;
 import com.facebook.react.bridge.ReadableMap;
 import com.facebook.react.turbomodule.core.interfaces.TurboModule;
 import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
 
 public abstract class NativeAmplyModuleSpec extends ReactContextBaseJavaModule implements TurboModule {
   public static final String NAME = "Amply";
@@ -67,7 +68,7 @@ public abstract class NativeAmplyModuleSpec extends ReactContextBaseJavaModule i
 
   @ReactMethod
   @DoNotStrip
-  public abstract void setUserId(String userId);
+  public abstract void setUserId(@Nullable String userId);
 
   @ReactMethod
   @DoNotStrip
