@@ -190,11 +190,21 @@ function generateModule(name, moduleConfig) {
 
   const iosConfig = moduleConfig.ios;
   if (iosConfig && iosConfig.sourceDir) {
+    const iosOutputDir = path.resolve(ROOT, iosConfig.sourceDir);
+
+    // Remove stale doubly-nested directory that causes duplicate symbols.
+    // Codegen outputs to {outputDir}/{libraryName}/, so a nested
+    // {outputDir}/{libraryName}/{libraryName}/ is always stale.
+    const staleNestedDir = path.join(iosOutputDir, libraryName, libraryName);
+    if (fs.existsSync(staleNestedDir)) {
+      fs.rmSync(staleNestedDir, {recursive: true});
+    }
+
     RNCodegen.generate(
       {
         libraryName,
         schema,
-        outputDirectory: path.resolve(ROOT, iosConfig.sourceDir),
+        outputDirectory: iosOutputDir,
         moduleName: iosConfig.moduleName ?? libraryName,
         assumeNonnull: true,
       },

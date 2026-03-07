@@ -1,11 +1,11 @@
 Pod::Spec.new do |s|
   s.name         = 'AmplyReactNative'
-  s.version      = '0.1.0-alpha.1'
+  s.version      = '0.1.0'
   s.summary      = 'React Native bridge for Amply SDK'
-  s.homepage     = 'https://github.com/amply/amply-react-native'
+  s.homepage     = 'https://github.com/amply-tools/amply-react-native'
   s.license      = { :type => 'MIT' }
   s.authors      = { 'Amply' => 'opensource@amply.tools' }
-  s.source       = { :git => 'https://github.com/amply/amply-react-native.git', :tag => s.version.to_s }
+  s.source       = { :git => 'https://github.com/amply-tools/amply-react-native.git', :tag => s.version.to_s }
 
   s.platforms    = { :ios => '15.1' }
   s.source_files = 'Sources/**/*.{swift,h,m,mm}'
