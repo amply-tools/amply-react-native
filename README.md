@@ -11,7 +11,8 @@ React Native TurboModule bridge for the Amply SDK. Enables event tracking, deepl
 | System events API | ✅ | Android, iOS |
 | Data inspection | ✅ | Android, iOS |
 | Debug/Logging | ✅ | Android, iOS |
-| Advanced API (identify, setUserProperty, flush) | ⏳ | Android, iOS |
+| Custom properties | ✅ | Android, iOS |
+| User identification | ✅ | Android, iOS |
 
 ## Requirements
 
@@ -52,6 +53,12 @@ await Amply.track({
   name: 'Button Tapped',
   properties: { screen: 'home' },
 });
+
+// Identify users
+Amply.setUserId('user-123');
+
+// Set custom properties for targeting
+Amply.setCustomProperties({ plan: 'premium', onboarded: true });
 
 // Listen for campaign deeplinks
 const unsubscribe = await Amply.addDeepLinkListener((event) => {

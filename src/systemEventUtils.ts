@@ -23,6 +23,10 @@ export function formatSystemEventLabel(
 ): string {
   const {verbose = false} = options;
 
+  if (event.name === 'SessionStarted') {
+    const type = event.properties.type as string | undefined;
+    return type ? `Session started (${type})` : 'Session started';
+  }
   if (event.name === 'CampaignShown') {
     const campaignId = event.properties.campaignId as string | undefined;
     const source = event.properties.source as string | undefined;
