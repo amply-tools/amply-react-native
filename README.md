@@ -26,15 +26,16 @@ React Native TurboModule bridge for the Amply SDK. Enables event tracking, deepl
 yarn add @amplytools/react-native-amply-sdk
 ```
 
-For Expo, add the plugin to `app.json`:
+The SDK autolinks on both bare React Native and Expo — no `app.json` plugin entry, no manual `MainApplication` edits.
 
-```json
-{
-  "expo": {
-    "plugins": ["@amplytools/react-native-amply-sdk"]
-  }
-}
+For Expo apps you may still need a rebuild after install:
+
+```bash
+npx expo prebuild --clean
+npx expo run:android   # or run:ios
 ```
+
+If you upgraded from v0.2.11 or earlier and have `"@amplytools/react-native-amply-sdk"` (or the historical `"@amply/amply-react-native"`) in your `plugins` array — remove it. The config plugin is now a no-op kept only for backward compatibility.
 
 ## Quick Start
 

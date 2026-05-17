@@ -1,0 +1,10 @@
+# Build artifacts. Without this file npm uses `files` in package.json as an
+# inclusion list and IGNORES .gitignore, which is how 1.5 GB of gradle build
+# outputs almost shipped in the 0.2.11 attempt.
+android/build/
+android/.cxx/
+ios/build/
+
+# Defense-in-depth: release.sh strips CLAUDE.md before publishing, but list
+# it here too so a direct `npm publish` from main never leaks it.
+CLAUDE.md

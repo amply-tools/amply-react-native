@@ -71,7 +71,7 @@ adb shell am start -a android.intent.action.VIEW -d "amply://campaign?id=test123
 | Issue | Solution |
 |-------|----------|
 | "Module not found" after install | Run `yarn install` again in this directory |
-| "Plugin not found" during prebuild | Ensure plugin is in `expo.config.js`: `"@amply/amply-react-native"` |
+| "Plugin not found" during prebuild | Ensure plugin is in `expo.config.js`: `"@amplytools/react-native-amply-sdk"` |
 | Build fails with Gradle error | Usually Android SDK/JDK issue - verify: `adb devices` and `java -version` |
 | Metro bundler 404 errors | Clear watchman: `watchman watch-del-all && watchman watch-project .` |
 | Deeplinks not triggering | Verify module initialized: `adb logcat \| grep -i "amply"` should show logs |

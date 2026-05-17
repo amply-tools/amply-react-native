@@ -16,7 +16,7 @@
  * This script manually patches MainApplication.kt after prebuild to ensure
  * AmplyPackage is registered correctly.
  *
- * NOTE: For production apps using the published @amply/amply-react-native package
+ * NOTE: For production apps using the published @amplytools/react-native-amply-sdk package
  * from npm, this script should NOT be needed - autolinking should work automatically.
  *
  * This script only applies to Android. For iOS-only builds, it will skip gracefully.

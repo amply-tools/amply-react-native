@@ -1,9 +1,7 @@
 {
   "expo": {
     "entryPoint": "./app/index.tsx",
-    "plugins": [
-      "@amply/amply-react-native"
-    ],
+    "plugins": [],
     "scheme": ["amply", "amplyexpo"],
     "android": {
       "package": "tools.amply.sdk.sample.expo"

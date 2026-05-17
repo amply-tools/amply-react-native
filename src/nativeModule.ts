@@ -49,7 +49,9 @@ export function getNativeModule(): Spec {
   if (!module) {
     throw new Error(
       `Amply native module '${MODULE_NAME}' not found. ` +
-        'Ensure the module is properly linked and new architecture is enabled.'
+        'Ensure @amplytools/react-native-amply-sdk is installed, native dependencies are rebuilt, ' +
+        'and the package is registered by React Native autolinking ' +
+        '(Android: present in generated PackageList.java; iOS: pod installed and Pods rebuilt).'
     );
   }
 

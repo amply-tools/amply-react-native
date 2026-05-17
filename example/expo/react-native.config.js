@@ -2,7 +2,7 @@ const path = require('path');
 
 module.exports = {
   dependencies: {
-    '@amply/amply-react-native': {
+    '@amplytools/react-native-amply-sdk': {
       root: path.resolve(__dirname, '..', '..'),
     },
   },

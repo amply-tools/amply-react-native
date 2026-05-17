@@ -4,7 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Amply, {
   formatSystemEventLabel,
   systemEvents,
-} from '@amply/amply-react-native';
+} from '@amplytools/react-native-amply-sdk';
 import { routeAmplyUrl } from '../utils/amplyDeepLinkRouter';
 
 const SAMPLE_CONFIG = {

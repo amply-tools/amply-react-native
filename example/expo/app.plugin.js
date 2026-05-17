@@ -6,7 +6,7 @@ const { withDangerousMod } = require('@expo/config-plugins');
  * This plugin adds the native Amply module to the Expo prebuild
  * gradle configuration and MainApplication for local link: protocol usage.
  *
- * This is an optional example plugin. The main plugin ('@amply/amply-react-native')
+ * This is an optional example plugin. The main plugin ('@amplytools/react-native-amply-sdk')
  * should handle module registration automatically during expo prebuild.
  * If you need additional customization for the Expo example app, use this plugin.
  */

@@ -1,68 +1,40 @@
 /**
  * Expo Config Plugin for Amply React Native SDK
  *
- * The Amply React Native SDK is a TurboModule that uses react-native.config.js
- * for autolinking in Bare React Native. For Expo apps, this plugin ensures
- * AmplyPackage is registered in MainApplication (Android).
+ * Starting with v0.2.12 this plugin is a no-op: React Native autolinking now
+ * handles AmplyPackage registration automatically on both Android and iOS.
  *
- * iOS: AmplySDK is fetched automatically from CocoaPods Trunk via the podspec
- * dependency declaration - no Podfile modifications needed.
+ * The plugin is kept as a pass-through so that consumers who have it listed
+ * in their app.json plugins array (from earlier versions) continue to work
+ * without changes. You can safely remove the entry from your app.json.
  *
- * Architecture:
- * - Bare RN: Uses react-native.config.js autolinking (fully automatic)
- * - Expo: Uses react-native.config.js + Expo config plugin for Android registration
- *
- * Usage:
- * 1. Add to app.json: "@amply/amply-react-native" in plugins array
- * 2. Run: expo prebuild --clean
- * 3. Run: expo start and expo run:android/ios
+ * Background: pre-0.2.12 the package shipped expo-module.config.json, which
+ * made expo-modules-autolinking classify it as an Expo Module. Because the
+ * SDK is actually a plain TurboModule (no expo.modules.kotlin subclass),
+ * the package was hidden from RN CLI autolinking and never made it into
+ * PackageList.java on Android — runtime failed with "Amply native module
+ * 'Amply' not found". Fix: drop expo-module.config.json. RN autolinking now
+ * picks the package up directly via react-native.config.js. The previous
+ * manual add(AmplyPackage()) would risk duplicate registration if kept.
  */
 
-import { ConfigPlugin, withMainApplication } from '@expo/config-plugins';
+import { ConfigPlugin } from '@expo/config-plugins';
 
 type WithAmplyPluginProps = {
-  // Props for future use
+  // Reserved for future use.
 };
 
-/**
- * Modifies Android MainApplication to register AmplyPackage
- */
-const withAmplyAndroid: ConfigPlugin = (config) => {
-  return withMainApplication(config, async (cfg) => {
-    let contents = cfg.modResults.contents;
-
-    // Check if AmplyPackage is already imported
-    if (!contents.includes('import tools.amply.sdk.reactnative.AmplyPackage')) {
-      // Add import after the expo imports
-      contents = contents.replace(
-        /(import expo\.modules\.ReactNativeHostWrapper)/,
-        `import tools.amply.sdk.reactnative.AmplyPackage\n$1`
-      );
-    }
-
-    // For Kotlin syntax: packages.apply { ... }
-    // We need to add the package instance inside the apply block
-    if (!contents.includes('add(AmplyPackage())')) {
-      contents = contents.replace(
-        /(PackageList\(this\)\.packages\.apply \{[\s\S]*?)(\/\/ add.*?)\n(\s+\})/,
-        `$1$2\n              add(AmplyPackage())\n$3`
-      );
-    }
-
-    cfg.modResults.contents = contents;
-    return cfg;
-  });
-};
-
-/**
- * Expo Config Plugin for Amply React Native SDK
- *
- * Registers AmplyPackage in MainApplication for Expo apps (Android).
- * iOS uses CocoaPods Trunk for AmplySDK - no modifications needed.
- */
 const withAmply: ConfigPlugin<WithAmplyPluginProps> = (config) => {
-  // Apply Android modifications
-  return withAmplyAndroid(config);
+  if (process.env.NODE_ENV !== 'production') {
+    // eslint-disable-next-line no-console
+    console.log(
+      '[amply] @amplytools/react-native-amply-sdk: the Expo config plugin is ' +
+        'no longer required (autolinking handles native registration). You can ' +
+        'safely remove "@amplytools/react-native-amply-sdk" from the `plugins` ' +
+        'array in your app.json.'
+    );
+  }
+  return config;
 };
 
 export default withAmply;
