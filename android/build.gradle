@@ -19,7 +19,62 @@ def amplySdkVersion = project.findProperty('amplySdkVersion') ?: System.getenv('
 group = 'tools.amply'
 version = amplySdkVersion
 
-def reactNativeRootDir = file("$projectDir/../node_modules/react-native")
+// Locate node_modules/react-native. Mirrors the resolution order used by
+// react-native-reanimated and react-native-screens:
+//   1. Explicit override (REACT_NATIVE_NODE_MODULES_DIR) — gradle.properties,
+//      -P flag, or ext set by the consumer app.
+//   2. Path-shape candidates — fast, covers standard RN apps + 1-2 level
+//      monorepos + this repo's own examples.
+//   3. `node --print require.resolve(...)` — last-resort, handles pnpm and
+//      any non-standard hoisting.
+def safeAppExtGet(prop, fallback) {
+  def appProject = rootProject.allprojects.find { it.plugins.hasPlugin('com.android.application') }
+  appProject?.ext?.has(prop) ? appProject.ext.get(prop) : fallback
+}
+
+def resolveReactNativeDirectory() {
+  def userDefined = project.findProperty("REACT_NATIVE_NODE_MODULES_DIR") ?:
+    rootProject.findProperty("REACT_NATIVE_NODE_MODULES_DIR") ?:
+    safeAppExtGet("REACT_NATIVE_NODE_MODULES_DIR", null)
+
+  if (userDefined != null) {
+    return file(userDefined)
+  }
+
+  def candidates = [
+    file("${rootProject.projectDir}/../node_modules/react-native"),     // standard RN app
+    file("$projectDir/../node_modules/react-native"),                   // nested (dev/legacy)
+    file("${rootProject.projectDir}/../../node_modules/react-native"),  // 1-level monorepo
+    file("${rootProject.projectDir}/../../../node_modules/react-native"), // 2-level monorepo
+  ]
+
+  def found = candidates.find { it.exists() }
+  if (found != null) {
+    return found
+  }
+
+  def stdout = new ByteArrayOutputStream()
+  def result = exec {
+    workingDir(rootProject.projectDir)
+    commandLine("node", "--print", "require.resolve('react-native/package.json')")
+    standardOutput = stdout
+    ignoreExitValue = true
+  }
+
+  if (result.exitValue == 0) {
+    def pkg = file(stdout.toString().trim())
+    if (pkg.exists()) {
+      return pkg.parentFile
+    }
+  }
+
+  throw new GradleException(
+    "Could not find node_modules/react-native. " +
+    "Set -PREACT_NATIVE_NODE_MODULES_DIR=/abs/path/to/node_modules/react-native"
+  )
+}
+
+def reactNativeRootDir = resolveReactNativeDirectory()
 def reactNativeArchitectures =
   project.hasProperty("reactNativeArchitectures") ?
     project.getProperty("reactNativeArchitectures").split(",") :
