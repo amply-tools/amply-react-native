@@ -8,7 +8,13 @@ Pod::Spec.new do |s|
   s.source       = { :git => 'https://github.com/amply-tools/amply-react-native.git', :tag => s.version.to_s }
 
   s.platforms    = { :ios => '15.1' }
-  s.source_files = 'Sources/**/*.{swift,h,m,mm}'
+
+  # NOTE: This podspec MUST live at the package root (alongside package.json)
+  # so that RN CLI / expo-modules-autolinking auto-discovery finds it.
+  # Their iosResolver only scans the package root (non-recursively) for
+  # *.podspec files and ignores `react-native.config.js#ios.podspecPath`.
+  # Source files stay under ios/Sources/ — we just reference them from here.
+  s.source_files = 'ios/Sources/**/*.{swift,h,m,mm}'
 
   # React Native dependencies for TurboModules
   s.dependency 'React-Core'

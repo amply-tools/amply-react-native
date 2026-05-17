@@ -17,7 +17,17 @@ module.exports = {
         packageInstance: 'new AmplyPackage()',
         cmakeListsPath: 'src/main/jni/CMakeLists.txt',
       },
-      ios: null,
+      // iOS is intentionally OMITTED here, NOT set to null.
+      // RN CLI / expo-modules-autolinking auto-discovers the iOS pod via a
+      // top-level *.podspec at the package root (AmplyReactNative.podspec).
+      // Setting `ios: null` would explicitly opt OUT of iOS autolinking —
+      // pre-0.2.13 we did exactly that and survived only because
+      // `expo-module.config.json` pulled the pod through Expo autolinking;
+      // when we dropped that file in 0.2.12 the iOS pod stopped being linked
+      // (the 0.2.12 iOS regression).
+      // Setting `ios: { podspecPath: ... }` does NOT work either:
+      // expo-modules-autolinking's iosResolver ignores podspecPath and only
+      // scans the package root for *.podspec.
     },
   },
   commands: [],
