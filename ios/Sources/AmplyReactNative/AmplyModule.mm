@@ -249,6 +249,105 @@ RCT_EXPORT_MODULE()
   }];
 }
 
+// Parses an array of `{name, value}` dicts into native EventParam objects.
+//
+// Bad-shape entries (non-dict, missing/non-string name) are silently dropped — this
+// matches Android's `toEventParams()`, which filters them at parse time without
+// any signal. Entries whose name parsed cleanly but whose value is null/missing
+// are also dropped from the result, but they additionally flip `outDroppedNullValue`
+// to YES. Callers that need all-or-nothing semantics (i.e. `@events`) can use that
+// flag to skip the surrounding event, matching Android's `toNativeEventOrNull()`.
+static NSArray<ASDKDataSetTypeEventParam *> *AmplyEventParamsFromArray(id raw, BOOL *outDroppedNullValue) {
+  if (outDroppedNullValue) *outDroppedNullValue = NO;
+  if (![raw isKindOfClass:[NSArray class]]) {
+    return @[];
+  }
+  NSArray *rawArray = (NSArray *)raw;
+  NSMutableArray<ASDKDataSetTypeEventParam *> *result = [NSMutableArray arrayWithCapacity:rawArray.count];
+  for (id item in rawArray) {
+    if (![item isKindOfClass:[NSDictionary class]]) continue;
+    NSDictionary *dict = item;
+    NSString *name = dict[@"name"];
+    if (![name isKindOfClass:[NSString class]]) continue;
+    id value = dict[@"value"];
+    if (value == nil || value == [NSNull null]) {
+      if (outDroppedNullValue) *outDroppedNullValue = YES;
+      continue;
+    }
+    [result addObject:[[ASDKDataSetTypeEventParam alloc] initWithName:name value:value compareType:@"==="]];
+  }
+  return result;
+}
+
+static ASDKDataSetType *AmplyDataSetTypeFromDictionary(NSDictionary *type, NSString **outError) {
+  if (![type isKindOfClass:[NSDictionary class]]) {
+    if (outError) *outError = @"DataSetType payload must be an object";
+    return nil;
+  }
+  NSString *kind = type[@"kind"];
+  if (![kind isKindOfClass:[NSString class]]) {
+    if (outError) *outError = @"DataSetType.kind is required";
+    return nil;
+  }
+
+  if ([kind isEqualToString:@"@device"]) return ASDKDataSetTypeDevice.shared;
+  if ([kind isEqualToString:@"@user"]) return ASDKDataSetTypeUser.shared;
+  if ([kind isEqualToString:@"@custom"]) return ASDKDataSetTypeCustom.shared;
+  if ([kind isEqualToString:@"@session"]) return ASDKDataSetTypeSession.shared;
+
+  if ([kind isEqualToString:@"@triggeredEvent"]) {
+    NSDictionary *data = type[@"data"];
+    if (![data isKindOfClass:[NSDictionary class]]) {
+      if (outError) *outError = @"TriggeredEvent data is required";
+      return nil;
+    }
+    id strategyValue = data[@"countStrategy"];
+    NSString *strategyName = [strategyValue isKindOfClass:[NSString class]] ? (NSString *)strategyValue : nil;
+    ASDKDataSetTypeTriggeredEventCountStrategy *strategy = nil;
+    if ([strategyName isEqualToString:@"global"]) {
+      strategy = ASDKDataSetTypeTriggeredEventCountStrategy.global;
+    } else if ([strategyName isEqualToString:@"session"]) {
+      strategy = ASDKDataSetTypeTriggeredEventCountStrategy.session;
+    } else {
+      if (outError) *outError = @"TriggeredEvent.countStrategy must be 'global' or 'session'";
+      return nil;
+    }
+    NSArray<ASDKDataSetTypeEventParam *> *params = AmplyEventParamsFromArray(data[@"params"], NULL);
+    NSString *eventName = [data[@"eventName"] isKindOfClass:[NSString class]] ? data[@"eventName"] : nil;
+    return [[ASDKDataSetTypeTriggeredEvent alloc] initWithCountStrategy:strategy
+                                                                 params:params
+                                                              eventName:eventName];
+  }
+
+  if ([kind isEqualToString:@"@events"]) {
+    NSArray *data = type[@"data"];
+    if (![data isKindOfClass:[NSArray class]]) {
+      if (outError) *outError = @"Events data list is required";
+      return nil;
+    }
+    NSMutableArray<ASDKDataSetTypeEventsEvent *> *events = [NSMutableArray array];
+    for (id item in data) {
+      if (![item isKindOfClass:[NSDictionary class]]) continue;
+      NSDictionary *eventDict = item;
+      NSString *eventNameStr = eventDict[@"name"];
+      if (![eventNameStr isKindOfClass:[NSString class]]) continue;
+      id typeValue = eventDict[@"type"];
+      NSString *typeName = [typeValue isKindOfClass:[NSString class]] ? (NSString *)typeValue : nil;
+      ASDKEventType *eventType = [typeName isEqualToString:@"system"] ? ASDKEventType.system : ASDKEventType.custom;
+      // Match Android: if any supplied param had a non-null name but null/missing value,
+      // drop the whole event (mirrors toNativeEventOrNull()'s size-mismatch check).
+      BOOL droppedNullValue = NO;
+      NSArray<ASDKDataSetTypeEventParam *> *params = AmplyEventParamsFromArray(eventDict[@"params"], &droppedNullValue);
+      if (droppedNullValue) continue;
+      [events addObject:[[ASDKDataSetTypeEventsEvent alloc] initWithName:eventNameStr type:eventType params:params]];
+    }
+    return [[ASDKDataSetTypeEvents alloc] initWithData:events];
+  }
+
+  if (outError) *outError = [NSString stringWithFormat:@"Unknown dataset type: %@", kind];
+  return nil;
+}
+
 - (void)getDataSetSnapshot:(NSDictionary *)type
                    resolve:(RCTPromiseResolveBlock)resolve
                     reject:(RCTPromiseRejectBlock)reject
@@ -260,24 +359,16 @@ RCT_EXPORT_MODULE()
     return;
   }
 
-  NSString *kind = type[@"kind"];
-  RCTLogInfo(@"[AmplyReactNative] getDataSetSnapshot called with kind: %@", kind);
-
-  // Convert JS type to native ASDKDataSetType
-  ASDKDataSetType *dataSetType = nil;
-
-  if ([kind isEqualToString:@"@device"]) {
-    dataSetType = ASDKDataSetTypeDevice.shared;
-  } else if ([kind isEqualToString:@"@user"]) {
-    dataSetType = ASDKDataSetTypeUser.shared;
-  } else if ([kind isEqualToString:@"@session"]) {
-    dataSetType = ASDKDataSetTypeSession.shared;
-  } else {
+  NSString *parseError = nil;
+  ASDKDataSetType *dataSetType = AmplyDataSetTypeFromDictionary(type, &parseError);
+  if (!dataSetType) {
     if (reject) {
-      reject(@"AMP_INVALID_TYPE", [NSString stringWithFormat:@"Unknown dataset type: %@", kind], nil);
+      reject(@"AMP_INVALID_TYPE", parseError ?: @"Invalid dataset type payload", nil);
     }
     return;
   }
+
+  RCTLogInfo(@"[AmplyReactNative] getDataSetSnapshot called with kind: %@", type[@"kind"]);
 
   [self.amplyInstance getDataSetSnapshotType:dataSetType completionHandler:^(NSDictionary<NSString *, id> *snapshot, NSError *error) {
     if (error) {

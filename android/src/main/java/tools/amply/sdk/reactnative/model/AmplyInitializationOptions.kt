@@ -29,7 +29,6 @@ data class AmplyInitializationOptions(
   val apiKeyPublic: String,
   val apiKeySecret: String?,
   val endpoint: String?,
-  val datasetPrefetch: List<DataSetType>?,
   val defaultConfig: String?,
   val debug: Boolean?,
   val logLevel: LogLevel?,

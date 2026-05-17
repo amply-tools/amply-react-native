@@ -19,7 +19,6 @@ export type AmplyInitializationConfig = {
   apiKeyPublic: string;
   apiKeySecret?: string | null;
   endpoint?: string | null;
-  datasetPrefetch?: DataSetType[] | null;
   defaultConfig?: string | null;
   /**
    * Enable debug logging. Shorthand for logLevel: 'debug'.
@@ -50,7 +49,7 @@ export type EventRecord = {
 
 export type SystemEventPayload = EventRecord;
 
-export type TriggeredEventCountStrategy = 'total' | 'session' | 'user';
+export type TriggeredEventCountStrategy = 'global' | 'session';
 
 export type TriggeredEventParam = {
   name: string;
@@ -72,6 +71,7 @@ export type EventsDataSetEvent = {
 export type DataSetType =
   | {kind: '@device'}
   | {kind: '@user'}
+  | {kind: '@custom'}
   | {kind: '@session'}
   | {kind: '@triggeredEvent'; data: TriggeredEventData}
   | {kind: '@events'; data: EventsDataSetEvent[]};

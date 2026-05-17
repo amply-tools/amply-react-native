@@ -39,7 +39,6 @@ namespace JS {
       NSString *apiKeyPublic() const;
       NSString *apiKeySecret() const;
       NSString *endpoint() const;
-      id<NSObject> _Nullable datasetPrefetch() const;
       NSString *defaultConfig() const;
       std::optional<bool> debug() const;
       NSString *logLevel() const;
@@ -138,11 +137,6 @@ inline NSString *JS::NativeAmplyModule::AmplyInitializationConfig::endpoint() co
 {
   id const p = _v[@"endpoint"];
   return RCTBridgingToOptionalString(p);
-}
-inline id<NSObject> _Nullable JS::NativeAmplyModule::AmplyInitializationConfig::datasetPrefetch() const
-{
-  id const p = _v[@"datasetPrefetch"];
-  return p;
 }
 inline NSString *JS::NativeAmplyModule::AmplyInitializationConfig::defaultConfig() const
 {

@@ -66,6 +66,50 @@ describe('Amply JS API', () => {
     expect(result).toBe(snapshot);
   });
 
+  it.each([
+    ['singleton @device', { kind: '@device' as const }],
+    ['singleton @user', { kind: '@user' as const }],
+    ['singleton @custom', { kind: '@custom' as const }],
+    ['singleton @session', { kind: '@session' as const }],
+    [
+      '@triggeredEvent with global strategy',
+      {
+        kind: '@triggeredEvent' as const,
+        data: {
+          countStrategy: 'global' as const,
+          params: [{ name: 'level', value: 5 }],
+          eventName: 'LevelComplete',
+        },
+      },
+    ],
+    [
+      '@triggeredEvent with session strategy and no eventName',
+      {
+        kind: '@triggeredEvent' as const,
+        data: {
+          countStrategy: 'session' as const,
+          params: [],
+        },
+      },
+    ],
+    [
+      '@events with mixed event types',
+      {
+        kind: '@events' as const,
+        data: [
+          { name: 'Purchase', type: 'custom' as const, params: [{ name: 'sku', value: 'ABC' }] },
+          { name: 'SessionStarted', type: 'system' as const, params: [] },
+        ],
+      },
+    ],
+  ])('passes %s to the native bridge unchanged', async (_label, type) => {
+    mockNativeModule.getDataSetSnapshot.mockResolvedValueOnce({});
+
+    await Amply.getDataSetSnapshot(type);
+
+    expect(mockNativeModule.getDataSetSnapshot).toHaveBeenCalledWith(type);
+  });
+
   it('subscribes to system events through the TurboModule emitter', async () => {
     const remove = jest.fn();
     mockNativeModule.onSystemEvent.mockReturnValueOnce({ remove });

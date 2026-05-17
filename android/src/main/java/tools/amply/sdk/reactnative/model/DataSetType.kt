@@ -3,6 +3,7 @@ package tools.amply.sdk.reactnative.model
 sealed interface DataSetType {
   data object Device : DataSetType
   data object User : DataSetType
+  data object Custom : DataSetType
   data object Session : DataSetType
 
   data class TriggeredEvent(
@@ -11,9 +12,8 @@ sealed interface DataSetType {
     val eventName: String?
   ) : DataSetType {
     enum class CountStrategy(val wireName: String) {
-      TOTAL("total"),
-      SESSION("session"),
-      USER("user");
+      GLOBAL("global"),
+      SESSION("session");
 
       companion object {
         fun fromWireName(name: String?): CountStrategy? = entries.firstOrNull { it.wireName == name }

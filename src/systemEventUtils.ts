@@ -8,8 +8,6 @@ const DEFAULT_LABELS: Record<string, string> = {
   SessionFinished: 'Session finished',
   CampaignShown: 'Campaign shown',
   EventTriggered: 'Event triggered',
-  CampaignStarted: 'Campaign processing started',
-  CampaignFinished: 'Campaign finished',
 };
 
 export interface FormatOptions {

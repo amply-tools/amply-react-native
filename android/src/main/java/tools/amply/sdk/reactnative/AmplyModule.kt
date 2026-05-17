@@ -261,11 +261,6 @@ class AmplyModule(reactContext: ReactApplicationContext) :
 
     val apiKeySecret = if (hasKey("apiKeySecret")) getString("apiKeySecret") else null
     val endpoint = if (hasKey("endpoint")) getString("endpoint") else null
-    val datasetPrefetch = if (hasKey("datasetPrefetch")) {
-      getArray("datasetPrefetch")?.toDataSetTypes()
-    } else {
-      null
-    }
     val defaultConfig = if (hasKey("defaultConfig")) getString("defaultConfig") else null
     val debug = if (hasKey("debug")) getBoolean("debug") else null
     val logLevel = if (hasKey("logLevel")) LogLevel.fromString(getString("logLevel")) else null
@@ -275,18 +270,10 @@ class AmplyModule(reactContext: ReactApplicationContext) :
       apiKeyPublic = apiKeyPublic,
       apiKeySecret = apiKeySecret,
       endpoint = endpoint,
-      datasetPrefetch = datasetPrefetch,
       defaultConfig = defaultConfig,
       debug = debug,
       logLevel = logLevel,
     )
-  }
-
-  private fun ReadableArray.toDataSetTypes(): List<DataSetType> = buildList {
-    for (index in 0 until size()) {
-      val map = getMap(index) ?: continue
-      add(map.toDataSetType())
-    }
   }
 
   private fun ReadableMap.toDataSetType(): DataSetType {
@@ -294,6 +281,7 @@ class AmplyModule(reactContext: ReactApplicationContext) :
     return when (kind) {
       "@device" -> DataSetType.Device
       "@user" -> DataSetType.User
+      "@custom" -> DataSetType.Custom
       "@session" -> DataSetType.Session
       "@triggeredEvent" -> {
         val data = getMap("data") ?: throw IllegalArgumentException("TriggeredEvent data is required")

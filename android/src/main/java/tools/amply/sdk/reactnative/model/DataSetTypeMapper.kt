@@ -6,6 +6,7 @@ import tools.amply.sdk.events.EventType as NativeEventType
 fun DataSetType.toNativeDataSetType(): NativeDataSetType = when (this) {
   DataSetType.Device -> NativeDataSetType.Device
   DataSetType.User -> NativeDataSetType.User
+  DataSetType.Custom -> NativeDataSetType.Custom
   DataSetType.Session -> NativeDataSetType.Session
 is DataSetType.TriggeredEvent ->
     NativeDataSetType.TriggeredEvent(
