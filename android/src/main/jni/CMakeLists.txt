@@ -73,4 +73,8 @@ target_link_libraries(
   fbjni::fbjni
 )
 
+# Required for Android 15 / Google Play 16 KB page-size policy.
+# https://developer.android.com/guide/practices/page-sizes
+target_link_options(AmplyReactNative PRIVATE "-Wl,-z,max-page-size=16384")
+
 target_compile_reactnative_options(AmplyReactNative PRIVATE)
