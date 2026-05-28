@@ -23,6 +23,10 @@
 {
   _eventEmitterCallback("onDeepLink", value);
 }
+- (void)emitOnCampaignPresent:(NSDictionary *)value
+{
+  _eventEmitterCallback("onCampaignPresent", value);
+}
 
 - (void)setEventEmitterCallback:(EventEmitterCallbackWrapper *)eventEmitterCallbackWrapper
 {
@@ -54,6 +58,18 @@ namespace facebook::react {
 
     static facebook::jsi::Value __hostFunction_NativeAmplyModuleSpecJSI_track(facebook::jsi::Runtime& rt, TurboModule &turboModule, const facebook::jsi::Value* args, size_t count) {
       return static_cast<ObjCTurboModule&>(turboModule).invokeObjCMethod(rt, PromiseKind, "track", @selector(track:resolve:reject:), args, count);
+    }
+
+    static facebook::jsi::Value __hostFunction_NativeAmplyModuleSpecJSI_trackEventGated(facebook::jsi::Runtime& rt, TurboModule &turboModule, const facebook::jsi::Value* args, size_t count) {
+      return static_cast<ObjCTurboModule&>(turboModule).invokeObjCMethod(rt, PromiseKind, "trackEventGated", @selector(trackEventGated:properties:resolve:reject:), args, count);
+    }
+
+    static facebook::jsi::Value __hostFunction_NativeAmplyModuleSpecJSI_resolveCampaign(facebook::jsi::Runtime& rt, TurboModule &turboModule, const facebook::jsi::Value* args, size_t count) {
+      return static_cast<ObjCTurboModule&>(turboModule).invokeObjCMethod(rt, VoidKind, "resolveCampaign", @selector(resolveCampaign:result:), args, count);
+    }
+
+    static facebook::jsi::Value __hostFunction_NativeAmplyModuleSpecJSI_registerCampaignPresenter(facebook::jsi::Runtime& rt, TurboModule &turboModule, const facebook::jsi::Value* args, size_t count) {
+      return static_cast<ObjCTurboModule&>(turboModule).invokeObjCMethod(rt, VoidKind, "registerCampaignPresenter", @selector(registerCampaignPresenter), args, count);
     }
 
     static facebook::jsi::Value __hostFunction_NativeAmplyModuleSpecJSI_getRecentEvents(facebook::jsi::Runtime& rt, TurboModule &turboModule, const facebook::jsi::Value* args, size_t count) {
@@ -116,6 +132,15 @@ namespace facebook::react {
         methodMap_["track"] = MethodMetadata {1, __hostFunction_NativeAmplyModuleSpecJSI_track};
         setMethodArgConversionSelector(@"track", 0, @"JS_NativeAmplyModule_TrackEventPayload:");
         
+        methodMap_["trackEventGated"] = MethodMetadata {2, __hostFunction_NativeAmplyModuleSpecJSI_trackEventGated};
+        
+        
+        methodMap_["resolveCampaign"] = MethodMetadata {2, __hostFunction_NativeAmplyModuleSpecJSI_resolveCampaign};
+        
+        
+        methodMap_["registerCampaignPresenter"] = MethodMetadata {0, __hostFunction_NativeAmplyModuleSpecJSI_registerCampaignPresenter};
+        
+        
         methodMap_["getRecentEvents"] = MethodMetadata {1, __hostFunction_NativeAmplyModuleSpecJSI_getRecentEvents};
         
         
@@ -153,6 +178,7 @@ namespace facebook::react {
         
         eventEmitterMap_["onSystemEvent"] = std::make_shared<AsyncEventEmitter<id>>();
         eventEmitterMap_["onDeepLink"] = std::make_shared<AsyncEventEmitter<id>>();
+        eventEmitterMap_["onCampaignPresent"] = std::make_shared<AsyncEventEmitter<id>>();
         setEventEmitterCallback([&](const std::string &name, id value) {
           static_cast<AsyncEventEmitter<id> &>(*eventEmitterMap_[name]).emit(value);
         });

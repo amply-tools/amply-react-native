@@ -42,6 +42,10 @@ public abstract class NativeAmplyModuleSpec extends ReactContextBaseJavaModule i
     mEventEmitterCallback.invoke("onDeepLink", value);
   }
 
+  protected final void emitOnCampaignPresent(ReadableMap value) {
+    mEventEmitterCallback.invoke("onCampaignPresent", value);
+  }
+
   @ReactMethod
   @DoNotStrip
   public abstract void initialize(ReadableMap config, Promise promise);
@@ -53,6 +57,18 @@ public abstract class NativeAmplyModuleSpec extends ReactContextBaseJavaModule i
   @ReactMethod
   @DoNotStrip
   public abstract void track(ReadableMap payload, Promise promise);
+
+  @ReactMethod
+  @DoNotStrip
+  public abstract void trackEventGated(String event, ReadableMap properties, Promise promise);
+
+  @ReactMethod
+  @DoNotStrip
+  public abstract void resolveCampaign(String mediationId, String result);
+
+  @ReactMethod
+  @DoNotStrip
+  public abstract void registerCampaignPresenter();
 
   @ReactMethod
   @DoNotStrip

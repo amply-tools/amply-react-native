@@ -44,14 +44,29 @@ static NSString* AmplyLogLevelToString(AmplyLogLevel level) {
     return @"none";
 }
 
-@interface Amply : NativeAmplyModuleSpecBase <NativeAmplyModuleSpec, ASDKDeepLinkListener, ASDKSystemEventsListener, ASDKLogListener>
+// Maps a JS-reported result string to the KMP CampaignResult enum. Strict semantics:
+// anything other than a deliberate user "Dismissed" or explicit "Completed" fails open
+// to Unavailable (proceed) — never strand the continuation on a malformed value.
+static ASDKCampaignResult* AmplyCampaignResultFromString(NSString *result) {
+    if ([result isEqualToString:@"Completed"]) return ASDKCampaignResult.completed;
+    if ([result isEqualToString:@"Dismissed"]) return ASDKCampaignResult.dismissed;
+    if ([result isEqualToString:@"Unavailable"]) return ASDKCampaignResult.unavailable;
+    RCTLogWarn(@"[AmplyReactNative] Unknown campaign result '%@'; treating as Unavailable (fail-open)", result);
+    return ASDKCampaignResult.unavailable;
+}
+
+@interface Amply : NativeAmplyModuleSpecBase <NativeAmplyModuleSpec, ASDKDeepLinkListener, ASDKCampaignPresenter, ASDKSystemEventsListener, ASDKLogListener>
 @property (nonatomic, strong) ASDKAmply *amplyInstance;
 @property (nonatomic, assign) BOOL deepLinkListenerRegistered;
+@property (nonatomic, assign) BOOL campaignPresenterRegistered;
 @property (nonatomic, assign) BOOL systemEventsListenerRegistered;
 @property (nonatomic, assign) BOOL lifecycleObserversRegistered;
 @property (nonatomic, assign) BOOL logListenerRegistered;
 @property (nonatomic, assign) AmplyLogLevel currentLogLevel;
 @property (nonatomic, strong) NSMutableArray<void (^)(ASDKAmply *)> *pendingPropertyOps;
+// Maps a bridge-minted mediationId -> the KMP CampaignResolution token awaiting an
+// outcome from JS. Guarded by @synchronized(self.pendingCompletions).
+@property (nonatomic, strong) NSMutableDictionary<NSString *, id<ASDKCampaignResolution>> *pendingCompletions;
 @end
 
 @implementation Amply
@@ -207,6 +222,132 @@ RCT_EXPORT_MODULE()
       reject(@"AMP_TRACK_FAILED", exception.reason, nil);
     }
   }
+}
+
+/**
+ * Continuation form of track. The resolve block IS the continuation: it is resolved
+ * with @"complete" or @"cancel" exactly once. The KMP trackEvent continuation overload
+ * guarantees exactly-once main-thread delivery; __block + a resolved flag guards the
+ * (defensive) double-settle. Fails open to @"complete" on any synchronous failure or
+ * if the SDK is not initialized.
+ *
+ * The raw CampaignResult is never surfaced here — the SDK collapses it into the
+ * onComplete/onCancel decision before this bridge ever sees it.
+ */
+- (void)trackEventGated:(NSString *)event
+             properties:(NSDictionary *)properties
+                resolve:(RCTPromiseResolveBlock)resolve
+                 reject:(RCTPromiseRejectBlock)reject
+{
+  if (!event || event.length == 0) {
+    if (reject) {
+      reject(@"AMP_INVALID_EVENT", @"Event 'event' is required", nil);
+    }
+    return;
+  }
+
+  NSDictionary *props = [properties isKindOfClass:[NSDictionary class]] ? properties : @{};
+
+  __block BOOL settled = NO;
+  void (^settle)(NSString *) = ^(NSString *decision) {
+    if (settled) { return; }
+    settled = YES;
+    if (resolve) {
+      resolve(decision);
+    }
+  };
+
+  if (!self.amplyInstance) {
+    // Fail open: not initialized -> proceed immediately (KMP state-machine row 1).
+    RCTLogWarn(@"[AmplyReactNative] trackEventGated before init; proceeding (fail-open)");
+    settle(@"complete");
+    return;
+  }
+
+  @try {
+    [self.amplyInstance trackEventEventName:event
+                                 properties:props
+                                  onProceed:^{ settle(@"complete"); }
+                                   onCancel:^{ settle(@"cancel"); }];
+    RCTLogInfo(@"[AmplyReactNative] trackEventGated dispatched: %@", event);
+  } @catch (NSException *exception) {
+    RCTLogError(@"[AmplyReactNative] trackEventGated failed; proceeding (fail-open): %@", exception.reason);
+    settle(@"complete");
+  }
+}
+
+- (void)resolveCampaign:(NSString *)mediationId
+                 result:(NSString *)result
+{
+  id<ASDKCampaignResolution> completion = nil;
+  @synchronized (self) {
+    if (!self.pendingCompletions) { return; }
+    completion = self.pendingCompletions[mediationId];
+    if (completion) {
+      [self.pendingCompletions removeObjectForKey:mediationId];
+    }
+  }
+  if (!completion) {
+    // Late/duplicate/unknown reply — the SDK token is the source of truth and is
+    // already settled (or never existed). Ignore.
+    RCTLogInfo(@"[AmplyReactNative] resolveCampaign for unknown/settled mediationId=%@; ignored", mediationId);
+    return;
+  }
+  ASDKCampaignResult *mapped = AmplyCampaignResultFromString(result);
+  RCTLogInfo(@"[AmplyReactNative] resolveCampaign mediationId=%@ result=%@", mediationId, result);
+  [completion resolveResult:mapped];
+}
+
+- (void)registerCampaignPresenter
+{
+  if (!self.amplyInstance) {
+    RCTLogWarn(@"[AmplyReactNative] Cannot register campaign presenter - Amply not initialized");
+    return;
+  }
+  if (self.campaignPresenterRegistered) {
+    RCTLogInfo(@"[AmplyReactNative] Campaign presenter already registered");
+    return;
+  }
+  if (!self.pendingCompletions) {
+    self.pendingCompletions = [NSMutableDictionary new];
+  }
+  RCTLogInfo(@"[AmplyReactNative] Registering campaign presenter");
+  // Catch-all registration: JS is the single capability registry and routes by URL.
+  [self.amplyInstance registerCampaignPresenterPresenter:self];
+  self.campaignPresenterRegistered = YES;
+}
+
+#pragma mark - ASDKCampaignPresenter
+
+/**
+ * Called by the KMP SDK when a campaign dispatches a present (blocking) action.
+ * We mint a mediationId, park the completion token, and surface the dispatch to JS.
+ * JS later replies via resolveCampaign:result:.
+ */
+- (void)onCampaignPresentUrl:(NSString *)url
+                        info:(NSDictionary<NSString *, id> *)info
+                  completion:(id<ASDKCampaignResolution>)completion
+{
+  NSString *mediationId = [[NSUUID UUID] UUIDString];
+  @synchronized (self) {
+    if (!self.pendingCompletions) {
+      self.pendingCompletions = [NSMutableDictionary new];
+    }
+    self.pendingCompletions[mediationId] = completion;
+  }
+
+  RCTLogInfo(@"[AmplyReactNative] Dispatching campaign present mediationId=%@ url=%@", mediationId, url);
+
+  NSDictionary *payload = @{
+    @"url": url ?: @"",
+    @"info": info ?: @{},
+    @"mediationId": mediationId
+  };
+
+  // Emitter delivery is async; emit on the main queue to match the deeplink path.
+  dispatch_async(dispatch_get_main_queue(), ^{
+    [self emitOnCampaignPresent:payload];
+  });
 }
 
 - (void)getRecentEvents:(double)limit
@@ -675,6 +816,20 @@ static ASDKDataSetType *AmplyDataSetTypeFromDictionary(NSDictionary *type, NSStr
 - (void)dealloc
 {
   [[NSNotificationCenter defaultCenter] removeObserver:self];
+
+  // Fail open any in-flight mediated actions so no continuation is left hanging.
+  NSArray<id<ASDKCampaignResolution>> *inFlight = nil;
+  @synchronized (self) {
+    inFlight = self.pendingCompletions.allValues;
+    [self.pendingCompletions removeAllObjects];
+  }
+  for (id<ASDKCampaignResolution> completion in inFlight) {
+    @try {
+      [completion resolveResult:ASDKCampaignResult.unavailable];
+    } @catch (NSException *exception) {
+      // Best-effort cleanup during teardown.
+    }
+  }
 }
 
 #pragma mark - ASDKSystemEventsListener

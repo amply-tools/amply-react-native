@@ -8,10 +8,13 @@ import tools.amply.sdk.reactnative.model.AmplyInitializationOptions
 import tools.amply.sdk.reactnative.model.DataSetType
 import tools.amply.sdk.reactnative.model.DeepLinkPayload
 import tools.amply.sdk.reactnative.model.EventEnvelope
+import tools.amply.sdk.reactnative.model.CampaignPresentPayload
 import tools.amply.sdk.reactnative.model.toNativeDataSetType
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
+import java.util.UUID
 import java.lang.ref.WeakReference
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -22,7 +25,10 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import tools.amply.sdk.Amply
+import tools.amply.sdk.actions.CampaignResolution
+import tools.amply.sdk.actions.CampaignResult
 import tools.amply.sdk.actions.DeepLinkListener
+import tools.amply.sdk.actions.CampaignPresenter
 import tools.amply.sdk.config.AmplyConfig
 import tools.amply.sdk.config.amplyConfig
 import tools.amply.sdk.core.AmplySDKInterface
@@ -41,7 +47,10 @@ class DefaultAmplyClient(
   private val pendingPropertyOps = mutableListOf<(Amply) -> Unit>()
   private val deepLinkRegistered = AtomicBoolean(false)
   private val systemEventsRegistered = AtomicBoolean(false)
+  private val campaignPresenterRegistered = AtomicBoolean(false)
   private val deepLinkSequence = AtomicLong(0L)
+  private val campaignPresentSequence = AtomicLong(0L)
+  private val pendingCompletions = ConcurrentHashMap<String, CampaignResolution>()
   private val lastResumedActivity = AtomicReference<WeakReference<Activity>?>(null)
   private val sessionPrimed = AtomicBoolean(false)
   private val mainHandler = Handler(Looper.getMainLooper())
@@ -62,6 +71,12 @@ class DefaultAmplyClient(
     extraBufferCapacity = 64,
   )
   override val logEvents: SharedFlow<EventEnvelope> = _logEvents.asSharedFlow()
+
+  private val _campaignPresents = MutableSharedFlow<CampaignPresentPayload>(
+    replay = 0,
+    extraBufferCapacity = 16,
+  )
+  override val campaignPresents: SharedFlow<CampaignPresentPayload> = _campaignPresents.asSharedFlow()
 
   override suspend fun initialize(options: AmplyInitializationOptions) {
     var createdInstance = false
@@ -132,6 +147,96 @@ class DefaultAmplyClient(
       )
       instance.track(name, properties?.toNonNullMap() ?: emptyMap())
     }
+  }
+
+  override fun trackEventGated(
+    name: String,
+    properties: Map<String, Any?>?,
+    onProceed: () -> Unit,
+    onCancel: () -> Unit,
+  ) {
+    val instance = amplyInstance
+    if (instance == null) {
+      // Fail open: not initialized yet -> proceed immediately (mirrors KMP row 1).
+      android.util.Log.w(
+        "AmplyReactNative",
+        "trackEventGated('$name') before init; proceeding (fail-open)"
+      )
+      onProceed()
+      return
+    }
+    android.util.Log.i(
+      "AmplyReactNative",
+      "trackEventGated('$name') with properties=${properties?.filterValues { it != null }}"
+    )
+    // KMP continuation overload guarantees exactly-once, main-thread delivery of the
+    // callbacks. The bridge simply forwards them; the raw result never surfaces here.
+    instance.trackEvent(
+      name,
+      properties?.toNonNullMap() ?: emptyMap(),
+      onProceed,
+      onCancel,
+    )
+  }
+
+  override fun registerCampaignPresenter() {
+    val instance = requireInstance()
+    if (!campaignPresenterRegistered.compareAndSet(false, true)) {
+      return
+    }
+    android.util.Log.i("AmplyReactNative", "Registering campaign presenter")
+    // Catch-all registration: the JS layer is the single capability registry and
+    // routes by URL on its side. Per-URL-pattern KMP registration is reserved for
+    // native integrators.
+    instance.registerCampaignPresenter(object : CampaignPresenter {
+      override fun present(
+        url: String,
+        info: Map<String, Any>,
+        completion: CampaignResolution,
+      ) {
+        val mediationId = UUID.randomUUID().toString()
+        pendingCompletions[mediationId] = completion
+        android.util.Log.i(
+          "AmplyReactNative",
+          "Dispatching campaign present mediationId=$mediationId url=$url infoKeys=${info.keys}"
+        )
+        val payload = CampaignPresentPayload(
+          sequenceId = campaignPresentSequence.incrementAndGet(),
+          mediationId = mediationId,
+          url = url,
+          info = info.mapValues { it.value },
+        )
+        if (!_campaignPresents.tryEmit(payload)) {
+          // Backpressure / no collector: fail open by reporting Unavailable so the
+          // SDK's continuation still proceeds rather than hanging until timeout.
+          android.util.Log.w(
+            "AmplyReactNative",
+            "Dropping campaign present mediationId=$mediationId; reporting Unavailable (fail-open)"
+          )
+          pendingCompletions.remove(mediationId)
+          completion.resolve(CampaignResult.Unavailable)
+        }
+      }
+    })
+  }
+
+  override fun resolveCampaign(mediationId: String, result: String) {
+    val completion = pendingCompletions.remove(mediationId)
+    if (completion == null) {
+      // Late/duplicate/unknown reply — the SDK token is the source of truth and is
+      // already settled (or never existed). Ignore.
+      android.util.Log.i(
+        "AmplyReactNative",
+        "resolveCampaign for unknown/settled mediationId=$mediationId result=$result; ignored"
+      )
+      return
+    }
+    val mapped = result.toCampaignResult()
+    android.util.Log.i(
+      "AmplyReactNative",
+      "resolveCampaign mediationId=$mediationId result=$result -> $mapped"
+    )
+    completion.resolve(mapped)
   }
 
   override suspend fun getRecentEvents(limit: Int): List<EventEnvelope> {
@@ -316,10 +421,22 @@ class DefaultAmplyClient(
     }
     deepLinkRegistered.set(false)
     systemEventsRegistered.set(false)
+    campaignPresenterRegistered.set(false)
     android.util.Log.i("AmplyReactNative", "Amply client shutdown; deep link listener cleared")
     deepLinkSequence.set(0L)
+    campaignPresentSequence.set(0L)
     sessionPrimed.set(false)
     lastResumedActivity.set(null)
+    // Fail open any in-flight mediated actions so no continuation is left hanging.
+    val inFlight = pendingCompletions.values.toList()
+    pendingCompletions.clear()
+    inFlight.forEach { completion ->
+      try {
+        completion.resolve(CampaignResult.Unavailable)
+      } catch (error: Throwable) {
+        android.util.Log.w("AmplyReactNative", "Error settling mediated action on shutdown: ${error.message}")
+      }
+    }
     _deepLinkEvents.resetReplayCache()
     _systemEvents.resetReplayCache()
   }
@@ -341,6 +458,23 @@ class DefaultAmplyClient(
 
   private fun Map<String, Any?>.toNonNullMap(): Map<String, Any> =
     entries.mapNotNull { (key, value) -> value?.let { key to it } }.toMap()
+
+  // Maps the JS-reported result string to the KMP enum. Strict semantics: anything
+  // that isn't a deliberate user 'Dismissed' or an explicit 'Completed' fails open to
+  // Unavailable (proceed) — never strand the continuation on a malformed value.
+  private fun String.toCampaignResult(): CampaignResult =
+    when (this) {
+      "Completed" -> CampaignResult.Completed
+      "Dismissed" -> CampaignResult.Dismissed
+      "Unavailable" -> CampaignResult.Unavailable
+      else -> {
+        android.util.Log.w(
+          "AmplyReactNative",
+          "Unknown campaign result '$this'; treating as Unavailable (fail-open)"
+        )
+        CampaignResult.Unavailable
+      }
+    }
 
   private fun Map<String, Any>.toNullableValues(): Map<String, Any?> =
     mapValues { it.value }

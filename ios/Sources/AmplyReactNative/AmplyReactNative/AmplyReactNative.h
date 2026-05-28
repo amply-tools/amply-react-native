@@ -78,6 +78,13 @@ namespace JS {
 - (void)track:(JS::NativeAmplyModule::TrackEventPayload &)payload
       resolve:(RCTPromiseResolveBlock)resolve
        reject:(RCTPromiseRejectBlock)reject;
+- (void)trackEventGated:(NSString *)event
+             properties:(NSDictionary *)properties
+                resolve:(RCTPromiseResolveBlock)resolve
+                 reject:(RCTPromiseRejectBlock)reject;
+- (void)resolveCampaign:(NSString *)mediationId
+                 result:(NSString *)result;
+- (void)registerCampaignPresenter;
 - (void)getRecentEvents:(double)limit
                 resolve:(RCTPromiseResolveBlock)resolve
                  reject:(RCTPromiseRejectBlock)reject;
@@ -107,6 +114,7 @@ facebook::react::EventEmitterCallback _eventEmitterCallback;
 
 - (void)emitOnSystemEvent:(NSDictionary *)value;
 - (void)emitOnDeepLink:(NSDictionary *)value;
+- (void)emitOnCampaignPresent:(NSDictionary *)value;
 @end
 
 namespace facebook::react {

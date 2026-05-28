@@ -27,6 +27,21 @@ static facebook::jsi::Value __hostFunction_NativeAmplyModuleSpecJSI_track(facebo
   return static_cast<JavaTurboModule &>(turboModule).invokeJavaMethod(rt, PromiseKind, "track", "(Lcom/facebook/react/bridge/ReadableMap;Lcom/facebook/react/bridge/Promise;)V", args, count, cachedMethodId);
 }
 
+static facebook::jsi::Value __hostFunction_NativeAmplyModuleSpecJSI_trackEventGated(facebook::jsi::Runtime& rt, TurboModule &turboModule, const facebook::jsi::Value* args, size_t count) {
+  static jmethodID cachedMethodId = nullptr;
+  return static_cast<JavaTurboModule &>(turboModule).invokeJavaMethod(rt, PromiseKind, "trackEventGated", "(Ljava/lang/String;Lcom/facebook/react/bridge/ReadableMap;Lcom/facebook/react/bridge/Promise;)V", args, count, cachedMethodId);
+}
+
+static facebook::jsi::Value __hostFunction_NativeAmplyModuleSpecJSI_resolveCampaign(facebook::jsi::Runtime& rt, TurboModule &turboModule, const facebook::jsi::Value* args, size_t count) {
+  static jmethodID cachedMethodId = nullptr;
+  return static_cast<JavaTurboModule &>(turboModule).invokeJavaMethod(rt, VoidKind, "resolveCampaign", "(Ljava/lang/String;Ljava/lang/String;)V", args, count, cachedMethodId);
+}
+
+static facebook::jsi::Value __hostFunction_NativeAmplyModuleSpecJSI_registerCampaignPresenter(facebook::jsi::Runtime& rt, TurboModule &turboModule, const facebook::jsi::Value* args, size_t count) {
+  static jmethodID cachedMethodId = nullptr;
+  return static_cast<JavaTurboModule &>(turboModule).invokeJavaMethod(rt, VoidKind, "registerCampaignPresenter", "()V", args, count, cachedMethodId);
+}
+
 static facebook::jsi::Value __hostFunction_NativeAmplyModuleSpecJSI_getRecentEvents(facebook::jsi::Runtime& rt, TurboModule &turboModule, const facebook::jsi::Value* args, size_t count) {
   static jmethodID cachedMethodId = nullptr;
   return static_cast<JavaTurboModule &>(turboModule).invokeJavaMethod(rt, PromiseKind, "getRecentEvents", "(DLcom/facebook/react/bridge/Promise;)V", args, count, cachedMethodId);
@@ -92,6 +107,9 @@ NativeAmplyModuleSpecJSI::NativeAmplyModuleSpecJSI(const JavaTurboModule::InitPa
   methodMap_["initialize"] = MethodMetadata {1, __hostFunction_NativeAmplyModuleSpecJSI_initialize};
   methodMap_["isInitialized"] = MethodMetadata {0, __hostFunction_NativeAmplyModuleSpecJSI_isInitialized};
   methodMap_["track"] = MethodMetadata {1, __hostFunction_NativeAmplyModuleSpecJSI_track};
+  methodMap_["trackEventGated"] = MethodMetadata {2, __hostFunction_NativeAmplyModuleSpecJSI_trackEventGated};
+  methodMap_["resolveCampaign"] = MethodMetadata {2, __hostFunction_NativeAmplyModuleSpecJSI_resolveCampaign};
+  methodMap_["registerCampaignPresenter"] = MethodMetadata {0, __hostFunction_NativeAmplyModuleSpecJSI_registerCampaignPresenter};
   methodMap_["getRecentEvents"] = MethodMetadata {1, __hostFunction_NativeAmplyModuleSpecJSI_getRecentEvents};
   methodMap_["getDataSetSnapshot"] = MethodMetadata {1, __hostFunction_NativeAmplyModuleSpecJSI_getDataSetSnapshot};
   methodMap_["registerDeepLinkListener"] = MethodMetadata {0, __hostFunction_NativeAmplyModuleSpecJSI_registerDeepLinkListener};
@@ -106,6 +124,7 @@ NativeAmplyModuleSpecJSI::NativeAmplyModuleSpecJSI(const JavaTurboModule::InitPa
   methodMap_["removeListeners"] = MethodMetadata {1, __hostFunction_NativeAmplyModuleSpecJSI_removeListeners};
   eventEmitterMap_["onSystemEvent"] = std::make_shared<AsyncEventEmitter<folly::dynamic>>();
   eventEmitterMap_["onDeepLink"] = std::make_shared<AsyncEventEmitter<folly::dynamic>>();
+  eventEmitterMap_["onCampaignPresent"] = std::make_shared<AsyncEventEmitter<folly::dynamic>>();
   configureEventEmitterCallback();
 }
 

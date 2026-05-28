@@ -42,6 +42,7 @@ class AmplyModule(reactContext: ReactApplicationContext) :
   private var lifecycleRegistered = false
   private var systemEventsJob: Job? = null
   private var logEventsJob: Job? = null
+  private var campaignPresenterJob: Job? = null
 
   override fun getName(): String = NAME
 
@@ -91,6 +92,55 @@ class AmplyModule(reactContext: ReactApplicationContext) :
         promise.reject(TRACK_ERROR, throwable)
       }
     }
+  }
+
+  override fun trackEventGated(event: String, properties: ReadableMap, promise: Promise) {
+    if (event.isBlank()) {
+      promise.reject(ARGUMENT_ERROR, "Event 'event' is required")
+      return
+    }
+    val props = properties.toHashMap()
+    // The Promise IS the continuation. We resolve "complete"/"cancel" exactly once;
+    // the KMP overload guarantees exactly-once main-thread delivery, and resolveOnce
+    // guards against the (impossible-but-defensive) double settle.
+    val resolved = java.util.concurrent.atomic.AtomicBoolean(false)
+    fun resolveOnce(decision: String) {
+      if (resolved.compareAndSet(false, true)) {
+        promise.resolve(decision)
+      }
+    }
+    try {
+      client.trackEventGated(
+        event,
+        props,
+        onProceed = { resolveOnce("complete") },
+        onCancel = { resolveOnce("cancel") },
+      )
+    } catch (throwable: Throwable) {
+      // Fail open: a synchronous failure proceeds rather than stranding the app.
+      android.util.Log.w(TAG, "trackEventGated failed; proceeding (fail-open)", throwable)
+      resolveOnce("complete")
+    }
+  }
+
+  override fun resolveCampaign(mediationId: String, result: String) {
+    client.resolveCampaign(mediationId, result)
+  }
+
+  override fun registerCampaignPresenter() {
+    if (campaignPresenterJob == null) {
+      campaignPresenterJob = scope.launch {
+        client.campaignPresents.collect { payload ->
+          android.util.Log.i(
+            TAG,
+            "Emitting campaign present to JS mediationId=${payload.mediationId} url=${payload.url}"
+          )
+          emitCampaignPresent(payload.mediationId, payload.url, payload.info)
+        }
+      }
+      android.util.Log.i(TAG, "Started campaign present collection job")
+    }
+    client.registerCampaignPresenter()
   }
 
   override fun getRecentEvents(limit: Double, promise: Promise) {
@@ -212,6 +262,8 @@ class AmplyModule(reactContext: ReactApplicationContext) :
     systemEventsJob = null
     logEventsJob?.cancel()
     logEventsJob = null
+    campaignPresenterJob?.cancel()
+    campaignPresenterJob = null
     lastEmittedDeepLinkId = null
     client.shutdown()
   }
@@ -226,6 +278,16 @@ class AmplyModule(reactContext: ReactApplicationContext) :
     android.util.Log.d(TAG, "emitDeepLink called: url=$url, consumed=$consumed")
     emitOnDeepLink(map)
     android.util.Log.d(TAG, "emitOnDeepLink completed")
+  }
+
+  private fun emitCampaignPresent(mediationId: String, url: String, info: Map<String, Any?>) {
+    val map = Arguments.createMap().apply {
+      putString("url", url)
+      putMap("info", info.toWritableMap())
+      putString("mediationId", mediationId)
+    }
+    // emitOnCampaignPresent comes from NativeAmplyModuleSpec (codegen).
+    emitOnCampaignPresent(map)
   }
 
   private fun emitSystemEvent(event: EventEnvelope) {

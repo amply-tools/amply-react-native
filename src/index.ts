@@ -4,18 +4,22 @@ export {useAmplySystemEvents} from './hooks/useAmplySystemEvents';
 export {formatSystemEventLabel} from './systemEventUtils';
 export type {FormatOptions} from './systemEventUtils';
 import type {
+  CampaignResult,
   AmplyInitializationConfig,
   DataSetSnapshot,
   DataSetType,
   DeepLinkEvent,
   EventRecord,
   LogLevel,
+  CampaignPresentEvent,
   TrackEventPayload,
 } from './nativeSpecs/NativeAmplyModule';
 
 let deepLinkRegistered = false;
 let debugLogListenerRegistered = false;
+let campaignPresenterRegistered = false;
 const deepLinkSubscriptions = new Set<() => void>();
+const campaignPresenterSubscriptions = new Set<() => void>();
 
 /**
  * Format a debug log entry for console output using new format.
@@ -132,6 +136,147 @@ export async function track(payload: TrackEventPayload): Promise<void> {
   await getNativeModule().track(payload);
 }
 
+/**
+ * Continuation hooks for the gating form of {@link trackEvent}.
+ *
+ * `onProceed` is "what to do next" (run exactly once when the gate resolves in
+ * favor of proceeding). `onCancel` is an OPTIONAL local-UI cleanup hook, invoked
+ * only when a campaign's blocking action is user-dismissed under an `onAbort=cancel`
+ * policy. Never put business logic in `onCancel`.
+ *
+ * The raw campaign result is deliberately not exposed — app code must never branch
+ * on which action ran or how it resolved.
+ */
+export type TrackEventContinuation = {
+  onProceed: () => void;
+  onCancel?: () => void;
+};
+
+/**
+ * Possible results a campaign presenter can report. Re-exported from the
+ * native spec for app presenters.
+ */
+export type {CampaignResult};
+
+/**
+ * A capability presenter for a campaign present (blocking) action. Keyed by deeplink
+ * URL semantics, NOT by event — the app is a registry of capabilities. Returns (or
+ * resolves) the terminal {@link CampaignResult}. Throwing / rejecting is treated as
+ * `'Unavailable'` (fail-open).
+ */
+export type CampaignPresenter = (
+  url: string,
+  info: Record<string, unknown>,
+) => CampaignResult | Promise<CampaignResult>;
+
+/**
+ * Fire-and-forget analytics track. Records the event and lets any matching NORMAL
+ * campaign action dispatch as usual. A blocking action matched here will NOT fire —
+ * there is no continuation to gate.
+ */
+export function trackEvent(event: string, properties?: Record<string, unknown> | null): Promise<void>;
+/**
+ * Continuation (gating) form. Records the event; if a blocking campaign action
+ * matches AND a presenter is registered, the SDK dispatches it and awaits its result
+ * before resolving the continuation:
+ * - proceed (completed / unavailable / timeout / dismissed+proceed) → `onProceed`
+ * - user dismiss against an `onAbort=cancel` action → `onCancel`
+ *
+ * Fails open: any error path runs `onProceed`. Passing a continuation is the gating
+ * switch — the same event tracked elsewhere without one is a valid, non-gating call.
+ */
+export function trackEvent(
+  event: string,
+  properties: Record<string, unknown> | null | undefined,
+  continuation: TrackEventContinuation,
+): Promise<void>;
+export async function trackEvent(
+  event: string,
+  properties?: Record<string, unknown> | null,
+  continuation?: TrackEventContinuation,
+): Promise<void> {
+  const props = properties ?? {};
+
+  if (!continuation) {
+    await getNativeModule().track({name: event, properties: props});
+    return;
+  }
+
+  let decision: string;
+  try {
+    decision = await getNativeModule().trackEventGated(event, props);
+  } catch (error) {
+    // Fail open: any bridge/SDK failure must proceed, never strand the app.
+    console.warn('[Amply] trackEvent continuation failed; proceeding (fail-open)', error);
+    continuation.onProceed();
+    return;
+  }
+
+  if (decision === 'cancel') {
+    // A deliberate user-dismiss under an onAbort=cancel action. Only the local-UI
+    // cleanup hook runs; the continuation is suppressed.
+    continuation.onCancel?.();
+    return;
+  }
+
+  // 'complete' and any unexpected value fail open to onProceed.
+  continuation.onProceed();
+}
+
+async function ensureCampaignPresenterRegistration(): Promise<void> {
+  if (!campaignPresenterRegistered) {
+    getNativeModule().registerCampaignPresenter();
+    campaignPresenterRegistered = true;
+  }
+}
+
+function trackCampaignPresenterSubscription(subscription?: {remove?: () => void}): () => void {
+  let removed = false;
+  const unsubscribe = () => {
+    if (removed) {
+      return;
+    }
+    removed = true;
+    subscription?.remove?.();
+    campaignPresenterSubscriptions.delete(unsubscribe);
+  };
+  campaignPresenterSubscriptions.add(unsubscribe);
+  return unsubscribe;
+}
+
+/**
+ * Register a capability presenter for campaign present (blocking) actions. The presenter
+ * is invoked when a blocking action is dispatched; it must report a terminal
+ * {@link CampaignResult} (returned or resolved). The SDK collapses multi-step ad
+ * lifecycles into the single result you report. Throwing/rejecting → `'Unavailable'`.
+ *
+ * @returns an unsubscribe function.
+ */
+export async function registerCampaignPresenter(
+  presenter: CampaignPresenter,
+): Promise<() => void> {
+  await ensureCampaignPresenterRegistration();
+
+  const nativeModule = getNativeModule();
+  const subscription = nativeModule.onCampaignPresent((event: CampaignPresentEvent) => {
+    const {url, info, mediationId} = event;
+    void Promise.resolve()
+      .then(() => presenter(url, info as Record<string, unknown>))
+      .then(
+        result => {
+          nativeModule.resolveCampaign(mediationId, result);
+        },
+        error => {
+          // Presenter failure is an infra failure, never a user dismiss → Unavailable.
+          console.warn('[Amply] campaign presenter failed; reporting Unavailable', error);
+          nativeModule.resolveCampaign(mediationId, 'Unavailable');
+        },
+      );
+  });
+
+  return trackCampaignPresenterSubscription(subscription);
+}
+
 export async function getRecentEvents(limit: number): Promise<EventRecord[]> {
   return getNativeModule().getRecentEvents(limit);
 }
@@ -211,6 +356,15 @@ export function removeAllListeners(): void {
     }
   });
   deepLinkSubscriptions.clear();
+
+  campaignPresenterSubscriptions.forEach(unsubscribe => {
+    try {
+      unsubscribe();
+    } catch (error) {
+      console.warn('[Amply] Failed to remove campaign presenter', error);
+    }
+  });
+  campaignPresenterSubscriptions.clear();
 }
 
 export type {
@@ -220,6 +374,7 @@ export type {
   DeepLinkEvent,
   EventRecord,
   LogLevel,
+  CampaignPresentEvent,
   TrackEventPayload,
 };
 
@@ -237,6 +392,8 @@ export default {
   initialize,
   isInitialized,
   track,
+  trackEvent,
+  registerCampaignPresenter,
   getRecentEvents,
   getDataSetSnapshot,
   addDeepLinkListener,

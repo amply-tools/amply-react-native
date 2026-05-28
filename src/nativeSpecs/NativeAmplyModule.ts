@@ -84,10 +84,67 @@ export type DeepLinkEvent = {
   consumed: boolean;
 };
 
+/**
+ * Terminal result reported by a campaign presenter back to the SDK.
+ *
+ * - 'Completed': the presenter satisfied the campaign condition (e.g. rewarded ad
+ *   watched to completion). The continuation proceeds.
+ * - 'Dismissed': a USER-INITIATED dismiss without satisfying the condition. With an
+ *   `onAbort=cancel` action this suppresses the continuation; with `onAbort=proceed`
+ *   it proceeds. Reserved strictly for user intent — never infra failures.
+ * - 'Unavailable': any non-user failure (no-fill, failed-to-show, not-ready, missing
+ *   precondition). Always fails open and proceeds.
+ *
+ * NOTE: this raw result is intentionally NOT surfaced to app continuation code —
+ * the public `trackEvent` continuation only ever sees `onProceed`/`onCancel`.
+ */
+export type CampaignResult = 'Completed' | 'Dismissed' | 'Unavailable';
+
+/**
+ * Payload delivered to JS when a campaign dispatches a present (blocking) action.
+ * The JS handler must eventually report a {@link CampaignResult} for `mediationId`
+ * via `resolveCampaign`.
+ */
+export type CampaignPresentEvent = {
+  url: string;
+  /**
+   * Enriched, decoupled action info:
+   * `{ url, campaignId, campaignName, triggeringEvent, triggeringProperties, content }`.
+   */
+  info: JsonMap;
+  mediationId: string;
+};
+
 export interface Spec extends TurboModule {
   initialize(config: AmplyInitializationConfig): Promise<void>;
   isInitialized(): boolean;
   track(payload: TrackEventPayload): Promise<void>;
+  /**
+   * Gated form of track: records the event, evaluates campaigns, and — if a
+   * blocking action matches and a presenter is registered — dispatches the campaign
+   * present and awaits its result. Resolves with the continuation decision:
+   * - 'complete': the continuation should proceed (onProceed).
+   * - 'cancel': the continuation should be suppressed (onCancel) — only ever
+   *   returned for a user `Dismissed` against an `onAbort=cancel` action.
+   *
+   * The raw {@link CampaignResult} is never returned to JS; it is collapsed natively
+   * into this 'complete' | 'cancel' decision so app code can't branch on results.
+   * Every failure path fails open to 'complete'.
+   */
+  trackEventGated(event: string, properties: JsonMap): Promise<string>;
+  /**
+   * Report the terminal result of a campaign present dispatched to JS via the
+   * `onCampaignPresent` event. Idempotent natively — late/duplicate calls are ignored.
+   * @param mediationId The id carried by the matching `onCampaignPresent` event.
+   * @param result One of {@link CampaignResult} ('Completed' | 'Dismissed' | 'Unavailable').
+   */
+  resolveCampaign(mediationId: string, result: string): void;
+  /**
+   * Register the JS side as the recipient of campaign present dispatches. Wiring of
+   * the actual per-URL-pattern routing happens natively; JS receives every dispatch
+   * via the `onCampaignPresent` event and replies through `resolveCampaign`.
+   */
+  registerCampaignPresenter(): void;
   getRecentEvents(limit: number): Promise<EventRecord[]>;
   getDataSetSnapshot(type: DataSetType): Promise<DataSetSnapshot>;
   registerDeepLinkListener(): void;
@@ -128,6 +185,7 @@ export interface Spec extends TurboModule {
   clearCustomProperties(): void;
   readonly onSystemEvent: EventEmitter<SystemEventPayload>;
   readonly onDeepLink: EventEmitter<DeepLinkEvent>;
+  readonly onCampaignPresent: EventEmitter<CampaignPresentEvent>;
   addListener(eventName: string): void;
   removeListeners(count: number): void;
 }
