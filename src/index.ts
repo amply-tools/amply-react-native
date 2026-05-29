@@ -5,6 +5,7 @@ export {formatSystemEventLabel} from './systemEventUtils';
 export type {FormatOptions} from './systemEventUtils';
 import type {
   CampaignResult,
+  GateDecision,
   AmplyInitializationConfig,
   DataSetSnapshot,
   DataSetType,
@@ -17,7 +18,7 @@ import type {
 
 let deepLinkRegistered = false;
 let debugLogListenerRegistered = false;
-let campaignPresenterRegistered = false;
+const registeredGates = new Set<string>();
 const deepLinkSubscriptions = new Set<() => void>();
 const campaignPresenterSubscriptions = new Set<() => void>();
 
@@ -137,96 +138,105 @@ export async function track(payload: TrackEventPayload): Promise<void> {
 }
 
 /**
- * Continuation hooks for the gating form of {@link trackEvent}.
- *
- * `onProceed` is "what to do next" (run exactly once when the gate resolves in
- * favor of proceeding). `onCancel` is an OPTIONAL local-UI cleanup hook, invoked
- * only when a campaign's blocking action is user-dismissed under an `onAbort=cancel`
- * policy. Never put business logic in `onCancel`.
- *
- * The raw campaign result is deliberately not exposed — app code must never branch
- * on which action ran or how it resolved.
+ * Possible results a gate presenter can report. Re-exported from the
+ * native spec for app presenters.
  */
-export type TrackEventContinuation = {
-  onProceed: () => void;
-  onCancel?: () => void;
+export type {CampaignResult, GateDecision};
+
+/**
+ * Outcome of a gate presenter's presentation, reported back via {@link GateResolution}.
+ */
+export type GatePresenterResult = CampaignResult;
+
+/**
+ * Resolution token handed to a {@link GatePresenter}. The presenter MUST report
+ * exactly one terminal result. Convenience helpers map to the underlying
+ * {@link CampaignResult}.
+ */
+export type GateResolution = {
+  /** The gate condition was satisfied (e.g. rewarded ad watched to completion). */
+  completed: () => void;
+  /** The user deliberately dismissed without satisfying the condition. */
+  dismissed: () => void;
+  /** Any non-user failure (no-fill, not-ready, failed-to-show). Fails open. */
+  unavailable: () => void;
 };
 
 /**
- * Possible results a campaign presenter can report. Re-exported from the
- * native spec for app presenters.
+ * A capability presenter for a gate (blocking) action, registered via
+ * {@link registerGate} and keyed by the gate's `baseUrl`. Receives the parsed query
+ * `params`, the enriched `info`, and a {@link GateResolution} token it must resolve
+ * exactly once. Throwing synchronously is treated as `unavailable` (fail-open).
  */
-export type {CampaignResult};
+export type GatePresenter = (
+  params: Record<string, unknown>,
+  info: Record<string, unknown>,
+  resolution: GateResolution,
+) => void;
 
 /**
- * A capability presenter for a campaign present (blocking) action. Keyed by deeplink
- * URL semantics, NOT by event — the app is a registry of capabilities. Returns (or
- * resolves) the terminal {@link CampaignResult}. Throwing / rejecting is treated as
- * `'Unavailable'` (fail-open).
+ * Options for {@link registerGate}.
  */
-export type CampaignPresenter = (
-  url: string,
-  info: Record<string, unknown>,
-) => CampaignResult | Promise<CampaignResult>;
+export type RegisterGateOptions = {
+  /**
+   * Abort policy when the user dismisses the gate without satisfying it.
+   * - `'cancel'` → {@link trackGated} resolves `{ outcome: 'cancelled' }`.
+   * - `'proceed'` → {@link trackGated} resolves `{ outcome: 'proceed', reason: 'failOpen' }`.
+   * Defaults to `'cancel'`.
+   */
+  onAbort?: 'cancel' | 'proceed';
+  /**
+   * Max time (ms) the gate waits for a presenter result before failing open.
+   * Defaults to the SDK's gate default.
+   */
+  timeoutMs?: number;
+};
 
 /**
  * Fire-and-forget analytics track. Records the event and lets any matching NORMAL
- * campaign action dispatch as usual. A blocking action matched here will NOT fire —
- * there is no continuation to gate.
+ * campaign action dispatch as usual. A gate action matched here will NOT block —
+ * there is no caller to gate. Use {@link trackGated} to await a gate.
  */
-export function trackEvent(event: string, properties?: Record<string, unknown> | null): Promise<void>;
-/**
- * Continuation (gating) form. Records the event; if a blocking campaign action
- * matches AND a presenter is registered, the SDK dispatches it and awaits its result
- * before resolving the continuation:
- * - proceed (completed / unavailable / timeout / dismissed+proceed) → `onProceed`
- * - user dismiss against an `onAbort=cancel` action → `onCancel`
- *
- * Fails open: any error path runs `onProceed`. Passing a continuation is the gating
- * switch — the same event tracked elsewhere without one is a valid, non-gating call.
- */
-export function trackEvent(
-  event: string,
-  properties: Record<string, unknown> | null | undefined,
-  continuation: TrackEventContinuation,
-): Promise<void>;
 export async function trackEvent(
   event: string,
   properties?: Record<string, unknown> | null,
-  continuation?: TrackEventContinuation,
 ): Promise<void> {
-  const props = properties ?? {};
-
-  if (!continuation) {
-    await getNativeModule().track({name: event, properties: props});
-    return;
-  }
-
-  let decision: string;
-  try {
-    decision = await getNativeModule().trackEventGated(event, props);
-  } catch (error) {
-    // Fail open: any bridge/SDK failure must proceed, never strand the app.
-    console.warn('[Amply] trackEvent continuation failed; proceeding (fail-open)', error);
-    continuation.onProceed();
-    return;
-  }
-
-  if (decision === 'cancel') {
-    // A deliberate user-dismiss under an onAbort=cancel action. Only the local-UI
-    // cleanup hook runs; the continuation is suppressed.
-    continuation.onCancel?.();
-    return;
-  }
-
-  // 'complete' and any unexpected value fail open to onProceed.
-  continuation.onProceed();
+  await getNativeModule().track({name: event, properties: properties ?? {}});
 }
 
-async function ensureCampaignPresenterRegistration(): Promise<void> {
-  if (!campaignPresenterRegistered) {
-    getNativeModule().registerCampaignPresenter();
-    campaignPresenterRegistered = true;
+/**
+ * Gated track. Records the event; if a gate action matches AND a presenter is
+ * registered for its `baseUrl`, the SDK dispatches the presentation and awaits its
+ * outcome before resolving:
+ * - `{ outcome: 'proceed', reason: 'completed' }` — the presenter satisfied the gate.
+ * - `{ outcome: 'proceed', reason: 'failOpen' }` — no gate matched, not initialized,
+ *   timeout, unavailable, infra failure, or dismiss under `onAbort=proceed`.
+ * - `{ outcome: 'cancelled' }` — user dismiss under an `onAbort=cancel` gate.
+ *
+ * This NEVER rejects: any infra failure resolves to `{ outcome: 'proceed', reason:
+ * 'failOpen' }` so the caller is never stranded.
+ */
+export async function trackGated(
+  event: string,
+  properties?: Record<string, unknown> | null,
+): Promise<GateDecision> {
+  const props = properties ?? {};
+  try {
+    const decision = (await getNativeModule().trackGated(event, props)) as Partial<GateDecision>;
+    if (decision && decision.outcome === 'cancelled') {
+      return {outcome: 'cancelled'};
+    }
+    if (decision && decision.outcome === 'proceed') {
+      const reason = decision.reason === 'completed' ? 'completed' : 'failOpen';
+      return {outcome: 'proceed', reason};
+    }
+    // Unexpected/malformed payload: fail open.
+    console.warn('[Amply] trackGated returned an unexpected decision; failing open', decision);
+    return {outcome: 'proceed', reason: 'failOpen'};
+  } catch (error) {
+    // Fail open: any bridge/SDK failure must proceed, never strand the caller.
+    console.warn('[Amply] trackGated failed; proceeding (fail-open)', error);
+    return {outcome: 'proceed', reason: 'failOpen'};
   }
 }
 
@@ -245,33 +255,62 @@ function trackCampaignPresenterSubscription(subscription?: {remove?: () => void}
 }
 
 /**
- * Register a capability presenter for campaign present (blocking) actions. The presenter
- * is invoked when a blocking action is dispatched; it must report a terminal
- * {@link CampaignResult} (returned or resolved). The SDK collapses multi-step ad
- * lifecycles into the single result you report. Throwing/rejecting → `'Unavailable'`.
+ * Register a gate presenter for a gate (blocking) action, keyed by its `baseUrl`.
+ * The presenter is invoked when a matching gate is dispatched; it receives the parsed
+ * query `params`, the enriched `info`, and a {@link GateResolution} it must resolve
+ * exactly once (`completed`/`dismissed`/`unavailable`). The SDK collapses multi-step
+ * ad lifecycles into the single result you report. A synchronous throw → `unavailable`
+ * (fail-open).
  *
  * @returns an unsubscribe function.
  */
-export async function registerCampaignPresenter(
-  presenter: CampaignPresenter,
+export async function registerGate(
+  baseUrl: string,
+  presenter: GatePresenter,
+  opts?: RegisterGateOptions,
 ): Promise<() => void> {
-  await ensureCampaignPresenterRegistration();
+  const onAbort = opts?.onAbort ?? 'cancel';
+  const timeoutMs = opts?.timeoutMs ?? 0;
+
+  if (!registeredGates.has(baseUrl)) {
+    getNativeModule().registerGate(baseUrl, onAbort, timeoutMs);
+    registeredGates.add(baseUrl);
+  }
 
   const nativeModule = getNativeModule();
   const subscription = nativeModule.onCampaignPresent((event: CampaignPresentEvent) => {
-    const {url, info, mediationId} = event;
-    void Promise.resolve()
-      .then(() => presenter(url, info as Record<string, unknown>))
-      .then(
-        result => {
-          nativeModule.resolveCampaign(mediationId, result);
-        },
-        error => {
-          // Presenter failure is an infra failure, never a user dismiss → Unavailable.
-          console.warn('[Amply] campaign presenter failed; reporting Unavailable', error);
-          nativeModule.resolveCampaign(mediationId, 'Unavailable');
-        },
+    const {url, params, info, mediationId} = event;
+    // The native side routes by baseUrl, but guard here too in case multiple gates
+    // share the single onCampaignPresent channel.
+    if (baseUrl && url && !url.startsWith(baseUrl)) {
+      return;
+    }
+
+    let settled = false;
+    const report = (result: CampaignResult) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      nativeModule.resolveCampaign(mediationId, result);
+    };
+    const resolution: GateResolution = {
+      completed: () => report('Completed'),
+      dismissed: () => report('Dismissed'),
+      unavailable: () => report('Unavailable'),
+    };
+
+    try {
+      presenter(
+        (params ?? {}) as Record<string, unknown>,
+        info as Record<string, unknown>,
+        resolution,
       );
+    } catch (error) {
+      // Presenter failure is an infra failure, never a user dismiss → Unavailable.
+      console.warn('[Amply] gate presenter threw; reporting Unavailable (fail-open)', error);
+      report('Unavailable');
+    }
   });
 
   return trackCampaignPresenterSubscription(subscription);
@@ -361,10 +400,11 @@ export function removeAllListeners(): void {
     try {
       unsubscribe();
     } catch (error) {
-      console.warn('[Amply] Failed to remove campaign presenter', error);
+      console.warn('[Amply] Failed to remove gate presenter', error);
     }
   });
   campaignPresenterSubscriptions.clear();
+  registeredGates.clear();
 }
 
 export type {
@@ -393,7 +433,8 @@ export default {
   isInitialized,
   track,
   trackEvent,
-  registerCampaignPresenter,
+  trackGated,
+  registerGate,
   getRecentEvents,
   getDataSetSnapshot,
   addDeepLinkListener,

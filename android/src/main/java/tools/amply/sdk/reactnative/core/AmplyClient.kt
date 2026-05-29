@@ -28,24 +28,25 @@ interface AmplyClient {
   suspend fun track(name: String, properties: Map<String, Any?>?)
 
   /**
-   * Gated form of track. Wraps the KMP `trackEvent` continuation overload:
-   * records the event, evaluates campaigns, and (if a blocking action matched and a
-   * presenter is registered) dispatches the campaign present and awaits its result
-   * before invoking exactly one of [onProceed] / [onCancel]. Fails open to
-   * [onProceed] on every error path.
+   * Gated form of track. Wraps the KMP `suspend fun trackGated(event, props): GateDecision`:
+   * records the event, evaluates campaigns, and (if a gate action matched and a presenter
+   * is registered) dispatches the gate presentation and awaits its outcome. Returns the
+   * collapsed [GateDecision]. Never throws — every error path returns
+   * [GateDecision.Proceed] with reason [GateDecision.ProceedReason.FAIL_OPEN].
    */
-  fun trackEventGated(
+  suspend fun trackGated(
     name: String,
     properties: Map<String, Any?>?,
-    onProceed: () -> Unit,
-    onCancel: () -> Unit,
-  )
+  ): GateDecision
 
   /**
-   * Register the bridge's JS-backed campaign presenter with the KMP SDK so a
-   * dispatched blocking action is surfaced to JS via [campaignPresents].
+   * Register the bridge's JS-backed gate presenter with the KMP SDK for [baseUrl], so a
+   * dispatched gate presentation is surfaced to JS via [campaignPresents].
+   *
+   * @param onAbort `"cancel"` or `"proceed"`.
+   * @param timeoutMs gate timeout in ms; `0` means use the SDK default.
    */
-  fun registerCampaignPresenter()
+  fun registerGate(baseUrl: String, onAbort: String, timeoutMs: Long)
 
   /**
    * Report the terminal result (one of `Completed` / `Dismissed` / `Unavailable`) for

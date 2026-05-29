@@ -85,28 +85,47 @@ export type DeepLinkEvent = {
 };
 
 /**
- * Terminal result reported by a campaign presenter back to the SDK.
+ * Terminal result reported by a gate presenter back to the SDK.
  *
- * - 'Completed': the presenter satisfied the campaign condition (e.g. rewarded ad
- *   watched to completion). The continuation proceeds.
+ * - 'Completed': the presenter satisfied the gate condition (e.g. rewarded ad
+ *   watched to completion). The gate proceeds with reason `completed`.
  * - 'Dismissed': a USER-INITIATED dismiss without satisfying the condition. With an
- *   `onAbort=cancel` action this suppresses the continuation; with `onAbort=proceed`
- *   it proceeds. Reserved strictly for user intent — never infra failures.
+ *   `onAbort=cancel` gate this cancels; with `onAbort=proceed` it proceeds. Reserved
+ *   strictly for user intent — never infra failures.
  * - 'Unavailable': any non-user failure (no-fill, failed-to-show, not-ready, missing
- *   precondition). Always fails open and proceeds.
+ *   precondition). Always fails open and proceeds with reason `failOpen`.
  *
- * NOTE: this raw result is intentionally NOT surfaced to app continuation code —
- * the public `trackEvent` continuation only ever sees `onProceed`/`onCancel`.
+ * NOTE: this raw result is intentionally NOT surfaced to app gating code — the public
+ * `trackGated` surface only ever sees the collapsed {@link GateDecision}.
  */
 export type CampaignResult = 'Completed' | 'Dismissed' | 'Unavailable';
 
 /**
- * Payload delivered to JS when a campaign dispatches a present (blocking) action.
+ * Bridge-level gate decision, mirroring the KMP `GateDecision`:
+ * - `{ outcome: 'proceed', reason: 'completed' | 'failOpen' }` — the gate cleared.
+ *   `completed` means the presenter satisfied the condition; `failOpen` means any
+ *   infra/timeout/not-ready/dismiss-under-proceed path resolved permissively.
+ * - `{ outcome: 'cancelled' }` — a deliberate user dismiss under an `onAbort=cancel`
+ *   gate. The caller should suppress its follow-up action.
+ *
+ * The raw {@link CampaignResult} is never surfaced here; it is collapsed natively.
+ */
+export type GateDecision =
+  | {outcome: 'proceed'; reason: 'completed' | 'failOpen'}
+  | {outcome: 'cancelled'};
+
+/**
+ * Payload delivered to JS when a gate dispatches its (blocking) presentation.
  * The JS handler must eventually report a {@link CampaignResult} for `mediationId`
  * via `resolveCampaign`.
  */
 export type CampaignPresentEvent = {
   url: string;
+  /**
+   * Parsed query parameters from the gate action URL — a flat string map decoded
+   * from the URL query string (e.g. `{ adUnit: 'rewarded_main', placement: 'home' }`).
+   */
+  params: JsonMap;
   /**
    * Enriched, decoupled action info:
    * `{ url, campaignId, campaignName, triggeringEvent, triggeringProperties, content }`.
@@ -120,31 +139,36 @@ export interface Spec extends TurboModule {
   isInitialized(): boolean;
   track(payload: TrackEventPayload): Promise<void>;
   /**
-   * Gated form of track: records the event, evaluates campaigns, and — if a
-   * blocking action matches and a presenter is registered — dispatches the campaign
-   * present and awaits its result. Resolves with the continuation decision:
-   * - 'complete': the continuation should proceed (onProceed).
-   * - 'cancel': the continuation should be suppressed (onCancel) — only ever
-   *   returned for a user `Dismissed` against an `onAbort=cancel` action.
+   * Gated form of track: records the event, evaluates campaigns, and — if a gate
+   * action matches and a presenter is registered — dispatches the gate presentation
+   * and awaits its outcome. Resolves with the collapsed {@link GateDecision} as a
+   * plain map:
+   * - `{ outcome: 'proceed', reason: 'completed' }` — gate satisfied.
+   * - `{ outcome: 'proceed', reason: 'failOpen' }` — any permissive path (no gate,
+   *   not initialized, timeout, unavailable, dismiss under `onAbort=proceed`, infra
+   *   failure).
+   * - `{ outcome: 'cancelled' }` — user dismiss under an `onAbort=cancel` gate.
    *
-   * The raw {@link CampaignResult} is never returned to JS; it is collapsed natively
-   * into this 'complete' | 'cancel' decision so app code can't branch on results.
-   * Every failure path fails open to 'complete'.
+   * The raw {@link CampaignResult} is never returned to JS; it is collapsed natively.
+   * This promise MUST NOT reject — every failure path resolves to a `proceed`/failOpen.
    */
-  trackEventGated(event: string, properties: JsonMap): Promise<string>;
+  trackGated(event: string, properties: JsonMap): Promise<JsonMap>;
   /**
-   * Report the terminal result of a campaign present dispatched to JS via the
+   * Report the terminal result of a gate presentation dispatched to JS via the
    * `onCampaignPresent` event. Idempotent natively — late/duplicate calls are ignored.
    * @param mediationId The id carried by the matching `onCampaignPresent` event.
    * @param result One of {@link CampaignResult} ('Completed' | 'Dismissed' | 'Unavailable').
    */
   resolveCampaign(mediationId: string, result: string): void;
   /**
-   * Register the JS side as the recipient of campaign present dispatches. Wiring of
-   * the actual per-URL-pattern routing happens natively; JS receives every dispatch
-   * via the `onCampaignPresent` event and replies through `resolveCampaign`.
+   * Register the JS side as the recipient of gate presentation dispatches for the
+   * given `baseUrl`. The native side wires the gate; JS receives each dispatch via
+   * the `onCampaignPresent` event and replies through `resolveCampaign`.
+   * @param baseUrl The gate action base URL this presenter handles.
+   * @param onAbort Abort policy: 'cancel' (user dismiss cancels) or 'proceed'.
+   * @param timeoutMs Max time the gate waits for a presenter result before failing open.
    */
-  registerCampaignPresenter(): void;
+  registerGate(baseUrl: string, onAbort: string, timeoutMs: number): void;
   getRecentEvents(limit: number): Promise<EventRecord[]>;
   getDataSetSnapshot(type: DataSetType): Promise<DataSetSnapshot>;
   registerDeepLinkListener(): void;

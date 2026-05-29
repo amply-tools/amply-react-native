@@ -25,10 +25,13 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import tools.amply.sdk.Amply
+import tools.amply.sdk.actions.AbortPolicy
+import tools.amply.sdk.actions.CampaignPresenter
 import tools.amply.sdk.actions.CampaignResolution
 import tools.amply.sdk.actions.CampaignResult
 import tools.amply.sdk.actions.DeepLinkListener
-import tools.amply.sdk.actions.CampaignPresenter
+import tools.amply.sdk.core.GateDecision as KmpGateDecision
+import tools.amply.sdk.core.ProceedReason as KmpProceedReason
 import tools.amply.sdk.config.AmplyConfig
 import tools.amply.sdk.config.amplyConfig
 import tools.amply.sdk.core.AmplySDKInterface
@@ -47,10 +50,13 @@ class DefaultAmplyClient(
   private val pendingPropertyOps = mutableListOf<(Amply) -> Unit>()
   private val deepLinkRegistered = AtomicBoolean(false)
   private val systemEventsRegistered = AtomicBoolean(false)
-  private val campaignPresenterRegistered = AtomicBoolean(false)
+  private val gatePresenterRegistered = AtomicBoolean(false)
   private val deepLinkSequence = AtomicLong(0L)
   private val campaignPresentSequence = AtomicLong(0L)
-  private val pendingCompletions = ConcurrentHashMap<String, CampaignResolution>()
+  // Global routing table: mediationId -> the resolution token awaiting a JS reply. Shared
+  // across every registered gate because resolveCampaign(mediationId) routes by exact id —
+  // that lookup is correct regardless of which gate minted the id.
+  private val pendingCompletions = ConcurrentHashMap<String, OwnedResolution>()
   private val lastResumedActivity = AtomicReference<WeakReference<Activity>?>(null)
   private val sessionPrimed = AtomicBoolean(false)
   private val mainHandler = Handler(Looper.getMainLooper())
@@ -149,80 +155,66 @@ class DefaultAmplyClient(
     }
   }
 
-  override fun trackEventGated(
+  override suspend fun trackGated(
     name: String,
     properties: Map<String, Any?>?,
-    onProceed: () -> Unit,
-    onCancel: () -> Unit,
-  ) {
+  ): GateDecision {
     val instance = amplyInstance
     if (instance == null) {
       // Fail open: not initialized yet -> proceed immediately (mirrors KMP row 1).
       android.util.Log.w(
         "AmplyReactNative",
-        "trackEventGated('$name') before init; proceeding (fail-open)"
+        "trackGated('$name') before init; failing open"
       )
-      onProceed()
-      return
+      return GateDecision.FAIL_OPEN
     }
     android.util.Log.i(
       "AmplyReactNative",
-      "trackEventGated('$name') with properties=${properties?.filterValues { it != null }}"
+      "trackGated('$name') with properties=${properties?.filterValues { it != null }}"
     )
-    // KMP continuation overload guarantees exactly-once, main-thread delivery of the
-    // callbacks. The bridge simply forwards them; the raw result never surfaces here.
-    instance.trackEvent(
-      name,
-      properties?.toNonNullMap() ?: emptyMap(),
-      onProceed,
-      onCancel,
-    )
+    return try {
+      // KMP: `suspend fun trackGated(event, props): GateDecision`. The bridge collapses
+      // the raw decision into its own GateDecision; the CampaignResult never surfaces here.
+      val decision = instance.trackGated(name, properties?.toNonNullMap() ?: emptyMap())
+      decision.toBridgeDecision()
+    } catch (cancellation: kotlinx.coroutines.CancellationException) {
+      // Respect structured-concurrency cancellation, but the bridge contract is
+      // "never throw" — a cancelled gate fails open.
+      android.util.Log.w("AmplyReactNative", "trackGated('$name') cancelled; failing open")
+      GateDecision.FAIL_OPEN
+    } catch (throwable: Throwable) {
+      android.util.Log.w("AmplyReactNative", "trackGated('$name') failed; failing open", throwable)
+      GateDecision.FAIL_OPEN
+    }
   }
 
-  override fun registerCampaignPresenter() {
+  override fun registerGate(baseUrl: String, onAbort: String, timeoutMs: Long) {
     val instance = requireInstance()
-    if (!campaignPresenterRegistered.compareAndSet(false, true)) {
-      return
+    gatePresenterRegistered.set(true)
+    val policy = when (onAbort) {
+      "proceed" -> AbortPolicy.Proceed
+      else -> AbortPolicy.Cancel
     }
-    android.util.Log.i("AmplyReactNative", "Registering campaign presenter")
-    // Catch-all registration: the JS layer is the single capability registry and
-    // routes by URL on its side. Per-URL-pattern KMP registration is reserved for
-    // native integrators.
-    instance.registerCampaignPresenter(object : CampaignPresenter {
-      override fun present(
-        url: String,
-        info: Map<String, Any>,
-        completion: CampaignResolution,
-      ) {
-        val mediationId = UUID.randomUUID().toString()
-        pendingCompletions[mediationId] = completion
-        android.util.Log.i(
-          "AmplyReactNative",
-          "Dispatching campaign present mediationId=$mediationId url=$url infoKeys=${info.keys}"
-        )
-        val payload = CampaignPresentPayload(
-          sequenceId = campaignPresentSequence.incrementAndGet(),
-          mediationId = mediationId,
-          url = url,
-          info = info.mapValues { it.value },
-        )
-        if (!_campaignPresents.tryEmit(payload)) {
-          // Backpressure / no collector: fail open by reporting Unavailable so the
-          // SDK's continuation still proceeds rather than hanging until timeout.
-          android.util.Log.w(
-            "AmplyReactNative",
-            "Dropping campaign present mediationId=$mediationId; reporting Unavailable (fail-open)"
-          )
-          pendingCompletions.remove(mediationId)
-          completion.resolve(CampaignResult.Unavailable)
-        }
-      }
-    })
+    android.util.Log.i(
+      "AmplyReactNative",
+      "Registering gate baseUrl=$baseUrl onAbort=$onAbort timeoutMs=$timeoutMs"
+    )
+    // JS is the single capability registry and routes by baseUrl on its side; the
+    // native gate carries the abort policy and timeout. Each registerGate registration
+    // gets its OWN presenter instance owning its OWN "current presentation" slot, so a
+    // dismiss() delivered to this gate's presenter can only abandon THIS gate's live
+    // presentation — never one belonging to a different url-pattern's gate.
+    instance.registerGate(
+      baseUrl = baseUrl,
+      presenter = GatePresenter(baseUrl),
+      onAbort = policy,
+      timeoutMs = if (timeoutMs > 0L) timeoutMs else DEFAULT_GATE_TIMEOUT_MS,
+    )
   }
 
   override fun resolveCampaign(mediationId: String, result: String) {
-    val completion = pendingCompletions.remove(mediationId)
-    if (completion == null) {
+    val owner = pendingCompletions[mediationId]
+    if (owner == null) {
       // Late/duplicate/unknown reply — the SDK token is the source of truth and is
       // already settled (or never existed). Ignore.
       android.util.Log.i(
@@ -236,7 +228,8 @@ class DefaultAmplyClient(
       "AmplyReactNative",
       "resolveCampaign mediationId=$mediationId result=$result -> $mapped"
     )
-    completion.resolve(mapped)
+    // settle() is at-most-once: a duplicate JS reply or a dismiss()/resolve() race is a no-op.
+    owner.settle(mapped)
   }
 
   override suspend fun getRecentEvents(limit: Int): List<EventEnvelope> {
@@ -421,20 +414,20 @@ class DefaultAmplyClient(
     }
     deepLinkRegistered.set(false)
     systemEventsRegistered.set(false)
-    campaignPresenterRegistered.set(false)
+    gatePresenterRegistered.set(false)
     android.util.Log.i("AmplyReactNative", "Amply client shutdown; deep link listener cleared")
     deepLinkSequence.set(0L)
     campaignPresentSequence.set(0L)
     sessionPrimed.set(false)
     lastResumedActivity.set(null)
-    // Fail open any in-flight mediated actions so no continuation is left hanging.
+    // Fail open any in-flight mediated actions so no continuation is left hanging. Each
+    // OwnedResolution clears its owning presenter's current-id slot as it settles.
     val inFlight = pendingCompletions.values.toList()
-    pendingCompletions.clear()
-    inFlight.forEach { completion ->
+    inFlight.forEach { owner ->
       try {
-        completion.resolve(CampaignResult.Unavailable)
+        owner.settle(CampaignResult.Unavailable)
       } catch (error: Throwable) {
-        android.util.Log.w("AmplyReactNative", "Error settling mediated action on shutdown: ${error.message}")
+        android.util.Log.w("AmplyReactNative", "Error settling gate presentation on shutdown: ${error.message}")
       }
     }
     _deepLinkEvents.resetReplayCache()
@@ -474,6 +467,19 @@ class DefaultAmplyClient(
         )
         CampaignResult.Unavailable
       }
+    }
+
+  // Collapses the KMP GateDecision into the bridge GateDecision. Verified against published
+  // KMP 0.5.0-SNAPSHOT: `tools.amply.sdk.core.GateDecision = Proceed(reason: ProceedReason) |
+  // Cancelled`, where `ProceedReason` is a TOP-LEVEL enum { Completed, FailOpen }.
+  private fun KmpGateDecision.toBridgeDecision(): GateDecision =
+    when (this) {
+      is KmpGateDecision.Proceed ->
+        when (reason) {
+          KmpProceedReason.Completed -> GateDecision.COMPLETED
+          KmpProceedReason.FailOpen -> GateDecision.FAIL_OPEN
+        }
+      is KmpGateDecision.Cancelled -> GateDecision.Cancelled
     }
 
   private fun Map<String, Any>.toNullableValues(): Map<String, Any?> =
@@ -550,5 +556,129 @@ class DefaultAmplyClient(
         "Unable to prime Amply session tracker: ${error.message}"
       )
     }
+  }
+
+  /**
+   * One KMP [CampaignPresenter] per [registerGate] registration (per url-pattern).
+   *
+   * Concurrency model: KMP presents at most one gate per url-pattern at a time (the gate is
+   * modal — you cannot show two rewarded ads, or two presentations of the same pattern, at
+   * once). KMP's [dismiss] is parameterless and is dispatched to the SPECIFIC presenter
+   * instance registered for that pattern. So the "which presentation does my dismiss() target"
+   * state must live PER-PRESENTER, here in [currentMediationId] — NOT in one global slot on the
+   * client. With one global slot, an overlap of two different-pattern gates (A present, B
+   * present, A dismiss) routes A's dismiss to B's token. Per-instance state makes A's dismiss
+   * abandon only A's own live presentation.
+   *
+   * Concurrent presentations of the SAME url-pattern are not supported: a second present() on
+   * this instance overwrites [currentMediationId], so a later dismiss() targets the latest. That
+   * is acceptable and intended given the modal contract above. [pendingCompletions] stays global
+   * (lookup by exact id is always correct), so a JS resolveCampaign for the overwritten id still
+   * settles its own token directly.
+   */
+  private inner class GatePresenter(private val baseUrl: String) : CampaignPresenter {
+    // The mediationId this presenter most recently present()ed and has not yet resolved/abandoned.
+    // dismiss() targets exactly this id, so it can only ever release THIS gate's live presentation.
+    private val currentMediationId = AtomicReference<String?>(null)
+
+    override fun dismiss() {
+      // The SDK calls dismiss() when this gate's caller coroutine is cancelled/times out and the
+      // resolution token is abandoned. Presentation UI lives in JS (nothing native to tear down),
+      // but the parked token MUST be released so pendingCompletions does not leak. Abandon exactly
+      // THIS presenter's current presentation; the owner's at-most-once guard means a later JS
+      // reply (resolveCampaign) becomes a harmless no-op.
+      val id = currentMediationId.get()
+      if (id == null) {
+        android.util.Log.i("AmplyReactNative", "Gate[$baseUrl] dismiss() with no active presentation")
+        return
+      }
+      val owner = pendingCompletions[id]
+      android.util.Log.i("AmplyReactNative", "Gate[$baseUrl] dismiss() releasing mediationId=$id")
+      owner?.abandon()
+    }
+
+    override fun present(
+      params: Map<String, String>,
+      info: Map<String, Any>,
+      resolution: CampaignResolution,
+    ) {
+      val mediationId = UUID.randomUUID().toString()
+      val owner = OwnedResolution(mediationId, resolution, this)
+      pendingCompletions[mediationId] = owner
+      currentMediationId.set(mediationId)
+      val url = (info["url"] as? String).orEmpty()
+      android.util.Log.i(
+        "AmplyReactNative",
+        "Gate[$baseUrl] dispatching present mediationId=$mediationId url=$url infoKeys=${info.keys}"
+      )
+      val payload = CampaignPresentPayload(
+        sequenceId = campaignPresentSequence.incrementAndGet(),
+        mediationId = mediationId,
+        url = url,
+        params = params.mapValues { it.value },
+        info = info.mapValues { it.value },
+      )
+      if (!_campaignPresents.tryEmit(payload)) {
+        // Backpressure / no collector: fail open by reporting Unavailable so the
+        // gate still proceeds rather than hanging until timeout.
+        android.util.Log.w(
+          "AmplyReactNative",
+          "Gate[$baseUrl] dropping present mediationId=$mediationId; reporting Unavailable (fail-open)"
+        )
+        owner.settle(CampaignResult.Unavailable)
+      }
+    }
+
+    /** Clears the current-presentation slot iff it still points at [mediationId]. */
+    fun clearIfCurrent(mediationId: String) {
+      currentMediationId.compareAndSet(mediationId, null)
+    }
+  }
+
+  /**
+   * Owns one [CampaignResolution] token for the lifetime of a single gate presentation.
+   *
+   * Knows its own [mediationId] so it can remove itself from [pendingCompletions] no matter
+   * which path settles it — a JS reply ([resolveCampaign]), the SDK abandoning the presentation
+   * ([CampaignPresenter.dismiss]), a backpressure fail-open, or [shutdown]. The [done] guard makes
+   * resolve and abandon mutually-exclusive and at-most-once: whichever fires first wins, the rest
+   * are no-ops. This is what prevents the pending-resolution leak on timeout/cancel/dismiss.
+   *
+   * Holds a reference to its owning [GatePresenter] so settling also clears that presenter's
+   * current-presentation slot (per-presenter, not global — see [GatePresenter]).
+   */
+  private inner class OwnedResolution(
+    val mediationId: String,
+    private val resolution: CampaignResolution,
+    private val owner: GatePresenter,
+  ) {
+    private val done = AtomicBoolean(false)
+
+    /** Resolve the underlying token exactly once and stop tracking this presentation. */
+    fun settle(result: CampaignResult) {
+      if (!done.compareAndSet(false, true)) return
+      cleanup()
+      resolution.resolve(result)
+    }
+
+    /**
+     * The SDK abandoned the presentation (dismiss): drop the parked token without resolving.
+     * The SDK's own timeout/cancel machinery owns the abort outcome here, so we must NOT also
+     * resolve — we only release our reference so the map cannot leak.
+     */
+    fun abandon() {
+      if (!done.compareAndSet(false, true)) return
+      cleanup()
+    }
+
+    private fun cleanup() {
+      pendingCompletions.remove(mediationId, this)
+      owner.clearIfCurrent(mediationId)
+    }
+  }
+
+  private companion object {
+    // Fallback when JS passes timeoutMs = 0 (i.e. "use a sensible default").
+    const val DEFAULT_GATE_TIMEOUT_MS = 30_000L
   }
 }

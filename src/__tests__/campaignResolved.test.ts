@@ -1,7 +1,12 @@
 import * as Amply from '../index';
 import {__setNativeModule} from '../nativeModule';
 
-type CampaignPresentEvent = {url: string; info: Record<string, unknown>; mediationId: string};
+type CampaignPresentEvent = {
+  url: string;
+  params: Record<string, unknown>;
+  info: Record<string, unknown>;
+  mediationId: string;
+};
 
 // Drains the microtask queue a few times so promise-chained presenter resolutions
 // (sync or async) settle before assertions run.
@@ -15,12 +20,12 @@ const mockNativeModule = {
   initialize: jest.fn(),
   isInitialized: jest.fn(() => true),
   track: jest.fn(),
-  trackEventGated: jest.fn(),
+  trackGated: jest.fn(),
   resolveCampaign: jest.fn(),
   getRecentEvents: jest.fn(),
   getDataSetSnapshot: jest.fn(),
   registerDeepLinkListener: jest.fn(),
-  registerCampaignPresenter: jest.fn(),
+  registerGate: jest.fn(),
   addListener: jest.fn(),
   removeListeners: jest.fn(),
   onSystemEvent: jest.fn(),
@@ -32,9 +37,10 @@ const mockNativeModule = {
   clearCustomProperties: jest.fn(),
 };
 
-describe('Amply CampaignResolved present/resolve/result API', () => {
+describe('Amply gate API (trackGated + registerGate)', () => {
   afterEach(() => {
     jest.clearAllMocks();
+    Amply.removeAllListeners();
     __setNativeModule(null);
   });
 
@@ -42,139 +48,229 @@ describe('Amply CampaignResolved present/resolve/result API', () => {
     __setNativeModule(mockNativeModule as never);
   });
 
-  describe('trackEvent continuation overload', () => {
-    it('calls fire-and-forget track when no callbacks are supplied', async () => {
+  describe('trackEvent (fire-and-forget)', () => {
+    it('forwards to native track and never gates', async () => {
       await Amply.trackEvent('SaveTapped', {foo: 'bar'});
 
       expect(mockNativeModule.track).toHaveBeenCalledWith({
         name: 'SaveTapped',
         properties: {foo: 'bar'},
       });
-      expect(mockNativeModule.trackEventGated).not.toHaveBeenCalled();
+      expect(mockNativeModule.trackGated).not.toHaveBeenCalled();
     });
 
-    it('routes a "complete" resolution to onProceed', async () => {
-      mockNativeModule.trackEventGated.mockResolvedValueOnce('complete');
+    it('defaults missing properties to an empty object', async () => {
+      await Amply.trackEvent('Ping');
 
-      const onProceed = jest.fn();
-      const onCancel = jest.fn();
-
-      await Amply.trackEvent('SaveTapped', {foo: 'bar'}, {onProceed, onCancel});
-
-      expect(mockNativeModule.trackEventGated).toHaveBeenCalledWith('SaveTapped', {
-        foo: 'bar',
+      expect(mockNativeModule.track).toHaveBeenCalledWith({
+        name: 'Ping',
+        properties: {},
       });
-      expect(onProceed).toHaveBeenCalledTimes(1);
-      expect(onCancel).not.toHaveBeenCalled();
-    });
-
-    it('routes a "cancel" resolution to onCancel', async () => {
-      mockNativeModule.trackEventGated.mockResolvedValueOnce('cancel');
-
-      const onProceed = jest.fn();
-      const onCancel = jest.fn();
-
-      await Amply.trackEvent('SaveTapped', undefined, {onProceed, onCancel});
-
-      expect(mockNativeModule.trackEventGated).toHaveBeenCalledWith('SaveTapped', {});
-      expect(onCancel).toHaveBeenCalledTimes(1);
-      expect(onProceed).not.toHaveBeenCalled();
-    });
-
-    it('fails open to onProceed when the native call rejects', async () => {
-      mockNativeModule.trackEventGated.mockRejectedValueOnce(new Error('boom'));
-
-      const onProceed = jest.fn();
-      const onCancel = jest.fn();
-
-      await Amply.trackEvent('SaveTapped', {}, {onProceed, onCancel});
-
-      expect(onProceed).toHaveBeenCalledTimes(1);
-      expect(onCancel).not.toHaveBeenCalled();
-    });
-
-    it('runs onProceed (not onCancel) for "cancel" when no onCancel is supplied', async () => {
-      mockNativeModule.trackEventGated.mockResolvedValueOnce('cancel');
-
-      const onProceed = jest.fn();
-
-      await Amply.trackEvent('SaveTapped', {}, {onProceed});
-
-      // The raw result is never exposed; a "cancel" with no onCancel hook is a no-op
-      // for the continuation. onProceed must not fire on a cancel.
-      expect(onProceed).not.toHaveBeenCalled();
     });
   });
 
-  describe('registerCampaignPresenter', () => {
-    it('registers once on the native module and subscribes to onCampaignPresent', async () => {
+  describe('trackGated', () => {
+    it('resolves proceed/completed when the gate is satisfied', async () => {
+      mockNativeModule.trackGated.mockResolvedValueOnce({
+        outcome: 'proceed',
+        reason: 'completed',
+      });
+
+      const decision = await Amply.trackGated('SaveTapped', {foo: 'bar'});
+
+      expect(mockNativeModule.trackGated).toHaveBeenCalledWith('SaveTapped', {
+        foo: 'bar',
+      });
+      expect(decision).toEqual({outcome: 'proceed', reason: 'completed'});
+    });
+
+    it('resolves proceed/failOpen when the native layer reports fail-open', async () => {
+      mockNativeModule.trackGated.mockResolvedValueOnce({
+        outcome: 'proceed',
+        reason: 'failOpen',
+      });
+
+      const decision = await Amply.trackGated('SaveTapped', {});
+
+      expect(decision).toEqual({outcome: 'proceed', reason: 'failOpen'});
+    });
+
+    it('resolves cancelled on a user dismiss under onAbort=cancel', async () => {
+      mockNativeModule.trackGated.mockResolvedValueOnce({outcome: 'cancelled'});
+
+      const decision = await Amply.trackGated('SaveTapped', undefined);
+
+      expect(mockNativeModule.trackGated).toHaveBeenCalledWith('SaveTapped', {});
+      expect(decision).toEqual({outcome: 'cancelled'});
+    });
+
+    it('never rejects — fails open to proceed/failOpen when native rejects', async () => {
+      mockNativeModule.trackGated.mockRejectedValueOnce(new Error('boom'));
+
+      const decision = await Amply.trackGated('SaveTapped', {});
+
+      expect(decision).toEqual({outcome: 'proceed', reason: 'failOpen'});
+    });
+
+    it('fails open on an unexpected/malformed native decision', async () => {
+      mockNativeModule.trackGated.mockResolvedValueOnce({outcome: 'wat'} as never);
+
+      const decision = await Amply.trackGated('SaveTapped', {});
+
+      expect(decision).toEqual({outcome: 'proceed', reason: 'failOpen'});
+    });
+
+    it('normalizes an unknown proceed reason to failOpen', async () => {
+      mockNativeModule.trackGated.mockResolvedValueOnce({
+        outcome: 'proceed',
+        reason: 'something-else',
+      } as never);
+
+      const decision = await Amply.trackGated('SaveTapped', {});
+
+      expect(decision).toEqual({outcome: 'proceed', reason: 'failOpen'});
+    });
+  });
+
+  describe('registerGate', () => {
+    it('registers once on the native module per baseUrl and subscribes to onCampaignPresent', async () => {
       const remove = jest.fn();
       mockNativeModule.onCampaignPresent.mockReturnValue({remove});
 
-      const presenter = jest.fn(() => 'Completed' as const);
-      const unsubscribe = await Amply.registerCampaignPresenter(presenter);
+      const presenter = jest.fn();
+      const unsubscribe = await Amply.registerGate('stillframe://ad', presenter);
 
-      expect(mockNativeModule.registerCampaignPresenter).toHaveBeenCalledTimes(1);
+      expect(mockNativeModule.registerGate).toHaveBeenCalledTimes(1);
+      expect(mockNativeModule.registerGate).toHaveBeenCalledWith('stillframe://ad', 'cancel', 0);
       expect(mockNativeModule.onCampaignPresent).toHaveBeenCalledTimes(1);
+
+      // Second registration of the same baseUrl re-subscribes but does NOT re-register.
+      await Amply.registerGate('stillframe://ad', jest.fn());
+      expect(mockNativeModule.registerGate).toHaveBeenCalledTimes(1);
 
       unsubscribe();
       expect(remove).toHaveBeenCalledTimes(1);
     });
 
-    it('forwards a synchronous result to resolveCampaign', async () => {
-      let emit: ((e: CampaignPresentEvent) => void) | undefined;
-      mockNativeModule.onCampaignPresent.mockImplementation((listener: (e: CampaignPresentEvent) => void) => {
-        emit = listener;
-        return {remove: jest.fn()};
+    it('passes through onAbort and timeoutMs options', async () => {
+      mockNativeModule.onCampaignPresent.mockReturnValue({remove: jest.fn()});
+
+      await Amply.registerGate('stillframe://ad', jest.fn(), {
+        onAbort: 'proceed',
+        timeoutMs: 8000,
       });
 
-      const presenter = jest.fn(() => 'Dismissed' as const);
-      await Amply.registerCampaignPresenter(presenter);
-
-      expect(emit).toBeDefined();
-      emit!({url: 'stillframe://ad', info: {campaignId: 'c1'}, mediationId: 'm1'});
-
-      // allow the (possibly async) presenter resolution to flush
-      await flushMicrotasks();
-
-      expect(presenter).toHaveBeenCalledWith('stillframe://ad', {campaignId: 'c1'});
-      expect(mockNativeModule.resolveCampaign).toHaveBeenCalledWith('m1', 'Dismissed');
+      expect(mockNativeModule.registerGate).toHaveBeenCalledWith('stillframe://ad', 'proceed', 8000);
     });
 
-    it('forwards a promise-resolved result to resolveCampaign', async () => {
+    it('delivers params + info to the presenter and forwards completed', async () => {
       let emit: ((e: CampaignPresentEvent) => void) | undefined;
-      mockNativeModule.onCampaignPresent.mockImplementation((listener: (e: CampaignPresentEvent) => void) => {
-        emit = listener;
-        return {remove: jest.fn()};
+      mockNativeModule.onCampaignPresent.mockImplementation(
+        (listener: (e: CampaignPresentEvent) => void) => {
+          emit = listener;
+          return {remove: jest.fn()};
+        },
+      );
+
+      const presenter = jest.fn(
+        (_params, _info, resolution: Amply.GateResolution) => resolution.completed(),
+      );
+      await Amply.registerGate('stillframe://ad', presenter);
+
+      expect(emit).toBeDefined();
+      emit!({
+        url: 'stillframe://ad?adUnit=rewarded_main',
+        params: {adUnit: 'rewarded_main'},
+        info: {campaignId: 'c1'},
+        mediationId: 'm1',
       });
-
-      const presenter = jest.fn(async () => 'Unavailable' as const);
-      await Amply.registerCampaignPresenter(presenter);
-
-      emit!({url: 'stillframe://ad', info: {}, mediationId: 'm2'});
 
       await flushMicrotasks();
 
-      expect(mockNativeModule.resolveCampaign).toHaveBeenCalledWith('m2', 'Unavailable');
+      expect(presenter).toHaveBeenCalledWith(
+        {adUnit: 'rewarded_main'},
+        {campaignId: 'c1'},
+        expect.any(Object),
+      );
+      expect(mockNativeModule.resolveCampaign).toHaveBeenCalledWith('m1', 'Completed');
+    });
+
+    it('forwards a dismissed resolution', async () => {
+      let emit: ((e: CampaignPresentEvent) => void) | undefined;
+      mockNativeModule.onCampaignPresent.mockImplementation(
+        (listener: (e: CampaignPresentEvent) => void) => {
+          emit = listener;
+          return {remove: jest.fn()};
+        },
+      );
+
+      await Amply.registerGate('stillframe://ad', (_p, _i, resolution) =>
+        resolution.dismissed(),
+      );
+
+      emit!({url: 'stillframe://ad', params: {}, info: {}, mediationId: 'm2'});
+      await flushMicrotasks();
+
+      expect(mockNativeModule.resolveCampaign).toHaveBeenCalledWith('m2', 'Dismissed');
     });
 
     it('reports Unavailable (fail-open) when the presenter throws', async () => {
       let emit: ((e: CampaignPresentEvent) => void) | undefined;
-      mockNativeModule.onCampaignPresent.mockImplementation((listener: (e: CampaignPresentEvent) => void) => {
-        emit = listener;
-        return {remove: jest.fn()};
-      });
+      mockNativeModule.onCampaignPresent.mockImplementation(
+        (listener: (e: CampaignPresentEvent) => void) => {
+          emit = listener;
+          return {remove: jest.fn()};
+        },
+      );
 
-      const presenter = jest.fn(() => {
+      await Amply.registerGate('stillframe://ad', () => {
         throw new Error('presenter blew up');
       });
-      await Amply.registerCampaignPresenter(presenter);
 
-      emit!({url: 'stillframe://ad', info: {}, mediationId: 'm3'});
-
+      emit!({url: 'stillframe://ad', params: {}, info: {}, mediationId: 'm3'});
       await flushMicrotasks();
 
       expect(mockNativeModule.resolveCampaign).toHaveBeenCalledWith('m3', 'Unavailable');
+    });
+
+    it('resolves at most once even if the presenter reports twice', async () => {
+      let emit: ((e: CampaignPresentEvent) => void) | undefined;
+      mockNativeModule.onCampaignPresent.mockImplementation(
+        (listener: (e: CampaignPresentEvent) => void) => {
+          emit = listener;
+          return {remove: jest.fn()};
+        },
+      );
+
+      await Amply.registerGate('stillframe://ad', (_p, _i, resolution) => {
+        resolution.completed();
+        resolution.dismissed();
+      });
+
+      emit!({url: 'stillframe://ad', params: {}, info: {}, mediationId: 'm4'});
+      await flushMicrotasks();
+
+      expect(mockNativeModule.resolveCampaign).toHaveBeenCalledTimes(1);
+      expect(mockNativeModule.resolveCampaign).toHaveBeenCalledWith('m4', 'Completed');
+    });
+
+    it('ignores dispatches whose url does not match the registered baseUrl', async () => {
+      let emit: ((e: CampaignPresentEvent) => void) | undefined;
+      mockNativeModule.onCampaignPresent.mockImplementation(
+        (listener: (e: CampaignPresentEvent) => void) => {
+          emit = listener;
+          return {remove: jest.fn()};
+        },
+      );
+
+      const presenter = jest.fn();
+      await Amply.registerGate('stillframe://ad', presenter);
+
+      emit!({url: 'other://thing', params: {}, info: {}, mediationId: 'm5'});
+      await flushMicrotasks();
+
+      expect(presenter).not.toHaveBeenCalled();
+      expect(mockNativeModule.resolveCampaign).not.toHaveBeenCalled();
     });
   });
 });

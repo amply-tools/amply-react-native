@@ -55,18 +55,58 @@ static ASDKCampaignResult* AmplyCampaignResultFromString(NSString *result) {
     return ASDKCampaignResult.unavailable;
 }
 
-@interface Amply : NativeAmplyModuleSpecBase <NativeAmplyModuleSpec, ASDKDeepLinkListener, ASDKCampaignPresenter, ASDKSystemEventsListener, ASDKLogListener>
+// Gate-side protocol names confirmed against the published KMP 0.5.0-SNAPSHOT Obj-C header
+// (AmplySDK.xcframework): ASDKCampaignPresenter (present(params:info:resolution:) + dismiss())
+// and ASDKCampaignResolution (resolve(result:)).
+@class AmplyGatePresenter;
+
+// The module owns the GLOBAL routing table and the JS emitter; each registered gate gets its
+// OWN AmplyGatePresenter instance (below) that owns the per-gate "current presentation" slot.
+@interface Amply : NativeAmplyModuleSpecBase <NativeAmplyModuleSpec, ASDKDeepLinkListener, ASDKSystemEventsListener, ASDKLogListener>
 @property (nonatomic, strong) ASDKAmply *amplyInstance;
 @property (nonatomic, assign) BOOL deepLinkListenerRegistered;
-@property (nonatomic, assign) BOOL campaignPresenterRegistered;
+@property (nonatomic, assign) BOOL gateRegistered;
 @property (nonatomic, assign) BOOL systemEventsListenerRegistered;
 @property (nonatomic, assign) BOOL lifecycleObserversRegistered;
 @property (nonatomic, assign) BOOL logListenerRegistered;
 @property (nonatomic, assign) AmplyLogLevel currentLogLevel;
 @property (nonatomic, strong) NSMutableArray<void (^)(ASDKAmply *)> *pendingPropertyOps;
-// Maps a bridge-minted mediationId -> the KMP CampaignResolution token awaiting an
-// outcome from JS. Guarded by @synchronized(self.pendingCompletions).
+// Global routing table: mediationId -> the KMP CampaignResolution token awaiting a JS reply.
+// Shared across every registered gate because resolveCampaign(mediationId) routes by exact id —
+// that lookup is correct regardless of which gate minted the id. Guarded by @synchronized(self).
 @property (nonatomic, strong) NSMutableDictionary<NSString *, id<ASDKCampaignResolution>> *pendingCompletions;
+// Retains the per-gate presenter instances; the KMP gate registry does not keep them alive.
+@property (nonatomic, strong) NSMutableArray<AmplyGatePresenter *> *gatePresenters;
+
+// Internal hooks used by AmplyGatePresenter (one instance per registerGate).
+- (id<ASDKCampaignResolution>)takePendingCompletionForMediationId:(NSString *)mediationId;
+- (void)parkPendingCompletion:(id<ASDKCampaignResolution>)resolution forMediationId:(NSString *)mediationId;
+- (void)emitGatePresent:(NSDictionary *)payload;
+@end
+
+/**
+ * One ASDKCampaignPresenter per registerGate registration (per url-pattern).
+ *
+ * Concurrency model: KMP presents at most one gate per url-pattern at a time (the gate is modal —
+ * you cannot show two rewarded ads, or two presentations of the same pattern, at once). KMP's
+ * -dismiss is parameterless and is dispatched to the SPECIFIC presenter instance registered for
+ * that pattern. So the "which presentation does my dismiss() target" state must live PER-PRESENTER,
+ * here in `activeMediationId` — NOT in one global slot on the module. With one global slot, an
+ * overlap of two different-pattern gates (A present, B present, A dismiss) routes A's dismiss to
+ * B's token. Per-instance state makes A's dismiss abandon only A's own live presentation.
+ *
+ * Concurrent presentations of the SAME url-pattern are not supported: a second -present overwrites
+ * `activeMediationId`, so a later -dismiss targets the latest. That is acceptable and intended
+ * given the modal contract above. The module's pendingCompletions stays global (lookup by exact id
+ * is always correct), so a JS resolveCampaign for the overwritten id still settles its own token.
+ */
+@interface AmplyGatePresenter : NSObject <ASDKCampaignPresenter>
+@property (nonatomic, weak) Amply *module;
+@property (nonatomic, copy) NSString *baseUrl;
+// The mediationId this presenter most recently -present'ed and has not yet resolved/abandoned.
+// -dismiss targets exactly this id, so it can only ever release THIS gate's live presentation.
+// Guarded by @synchronized(self); only ever holds a live id (cleared when its token is taken).
+@property (nonatomic, copy) NSString *activeMediationId;
 @end
 
 @implementation Amply
@@ -224,69 +264,142 @@ RCT_EXPORT_MODULE()
   }
 }
 
+// Maps the KMP GateDecision enum/sealed value to the JS-facing decision map:
+//   { outcome: "proceed", reason: "completed" | "failOpen" } | { outcome: "cancelled" }
+// The raw CampaignResult is never surfaced — the SDK collapses it into GateDecision.
+static NSDictionary *AmplyGateDecisionToMap(ASDKGateDecision *decision) {
+  // Proceed carries a `reason` (Completed / FailOpen); Cancelled carries nothing.
+  if ([decision isKindOfClass:[ASDKGateDecisionProceed class]]) {
+    ASDKGateDecisionProceed *proceed = (ASDKGateDecisionProceed *)decision;
+    NSString *reason = @"failOpen";
+    if (proceed.reason == ASDKProceedReason.completed) {
+      reason = @"completed";
+    }
+    return @{@"outcome": @"proceed", @"reason": reason};
+  }
+  // Cancelled — or any unexpected shape — collapses to its terminal outcome. A
+  // Cancelled value is the only non-proceed terminal in the frozen API.
+  if ([decision isKindOfClass:[ASDKGateDecisionCancelled class]]) {
+    return @{@"outcome": @"cancelled"};
+  }
+  // Defensive: an unknown decision subtype fails open rather than stranding the caller.
+  RCTLogWarn(@"[AmplyReactNative] Unknown GateDecision subtype; failing open");
+  return @{@"outcome": @"proceed", @"reason": @"failOpen"};
+}
+
 /**
- * Continuation form of track. The resolve block IS the continuation: it is resolved
- * with @"complete" or @"cancel" exactly once. The KMP trackEvent continuation overload
- * guarantees exactly-once main-thread delivery; __block + a resolved flag guards the
- * (defensive) double-settle. Fails open to @"complete" on any synchronous failure or
- * if the SDK is not initialized.
- *
- * The raw CampaignResult is never surfaced here — the SDK collapses it into the
- * onComplete/onCancel decision before this bridge ever sees it.
+ * Gated form of track. Backed by the K/N-generated async selector for the KMP
+ * `suspend fun trackGated(event:props:): GateDecision`. The resolve block is settled
+ * exactly once with the collapsed decision map; __block + a settled flag guards the
+ * (defensive) double-settle. This NEVER rejects: not-initialized, a thrown exception,
+ * or a K/N error all fail open to { outcome: "proceed", reason: "failOpen" }.
  */
-- (void)trackEventGated:(NSString *)event
-             properties:(NSDictionary *)properties
-                resolve:(RCTPromiseResolveBlock)resolve
-                 reject:(RCTPromiseRejectBlock)reject
+- (void)trackGated:(NSString *)event
+        properties:(NSDictionary *)properties
+           resolve:(RCTPromiseResolveBlock)resolve
+            reject:(RCTPromiseRejectBlock)reject
 {
   if (!event || event.length == 0) {
-    if (reject) {
-      reject(@"AMP_INVALID_EVENT", @"Event 'event' is required", nil);
-    }
+    // Even an invalid event fails open rather than rejecting — the JS contract is
+    // "trackGated never rejects".
+    RCTLogWarn(@"[AmplyReactNative] trackGated with empty event; failing open");
+    if (resolve) { resolve(@{@"outcome": @"proceed", @"reason": @"failOpen"}); }
     return;
   }
 
   NSDictionary *props = [properties isKindOfClass:[NSDictionary class]] ? properties : @{};
 
+  // Contract: resolve EXACTLY ONCE, ON MAIN. Every settle path — fail-open before init, the
+  // K/N success completion, the K/N error/cancellation completion, and the @catch — funnels
+  // through here. We always hop to the main queue (which serializes the once-guard, so the
+  // flag needs no further synchronization) and resolve at most once.
   __block BOOL settled = NO;
-  void (^settle)(NSString *) = ^(NSString *decision) {
-    if (settled) { return; }
-    settled = YES;
-    if (resolve) {
-      resolve(decision);
-    }
+  void (^settle)(NSDictionary *) = ^(NSDictionary *decision) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+      if (settled) { return; }
+      settled = YES;
+      if (resolve) {
+        resolve(decision);
+      }
+    });
   };
+  NSDictionary *failOpen = @{@"outcome": @"proceed", @"reason": @"failOpen"};
 
   if (!self.amplyInstance) {
-    // Fail open: not initialized -> proceed immediately (KMP state-machine row 1).
-    RCTLogWarn(@"[AmplyReactNative] trackEventGated before init; proceeding (fail-open)");
-    settle(@"complete");
+    // Fail open: not initialized -> proceed immediately (KMP gate state-machine row 1).
+    RCTLogWarn(@"[AmplyReactNative] trackGated before init; failing open");
+    settle(failOpen);
     return;
   }
 
   @try {
-    [self.amplyInstance trackEventEventName:event
-                                 properties:props
-                                  onProceed:^{ settle(@"complete"); }
-                                   onCancel:^{ settle(@"cancel"); }];
-    RCTLogInfo(@"[AmplyReactNative] trackEventGated dispatched: %@", event);
+    // Confirmed against the published KMP 0.5.0-SNAPSHOT header: the ASDKAmply facade's
+    // `suspend fun trackGated(event:properties:)` projects to
+    // `-trackGatedEvent:properties:completionHandler:` with a (ASDKGateDecision*, NSError*) handler.
+    [self.amplyInstance trackGatedEvent:event
+                             properties:props
+                      completionHandler:^(ASDKGateDecision *decision, NSError *error) {
+      if (error) {
+        // A coroutine error/cancellation fails open — never strand the caller. settle() routes
+        // this onto main with the same once-guard as the success path (resolve once, on main).
+        RCTLogWarn(@"[AmplyReactNative] trackGated coroutine error; failing open: %@", error.localizedDescription);
+        settle(failOpen);
+        return;
+      }
+      // settle() already hops to main to match the deeplink/present delivery contract.
+      settle(AmplyGateDecisionToMap(decision));
+    }];
+    RCTLogInfo(@"[AmplyReactNative] trackGated dispatched: %@", event);
   } @catch (NSException *exception) {
-    RCTLogError(@"[AmplyReactNative] trackEventGated failed; proceeding (fail-open): %@", exception.reason);
-    settle(@"complete");
+    RCTLogError(@"[AmplyReactNative] trackGated threw; failing open: %@", exception.reason);
+    settle(failOpen);
   }
+}
+
+/**
+ * Atomically removes and returns the token parked under `mediationId` from the GLOBAL routing
+ * table. Returning the token to exactly one caller is what makes resolve and dismiss mutually-
+ * exclusive and at-most-once: whoever takes the token first owns the outcome; every later path
+ * gets nil and becomes a no-op. This is the single point that prevents the pending-resolution
+ * leak on timeout/cancel/dismiss. (The per-gate "current presentation" slot lives on each
+ * AmplyGatePresenter, not here — the presenter clears its own slot around -dismiss.)
+ */
+- (id<ASDKCampaignResolution>)takePendingCompletionForMediationId:(NSString *)mediationId
+{
+  if (!mediationId) { return nil; }
+  @synchronized (self) {
+    if (!self.pendingCompletions) { return nil; }
+    id<ASDKCampaignResolution> token = self.pendingCompletions[mediationId];
+    if (token) {
+      [self.pendingCompletions removeObjectForKey:mediationId];
+    }
+    return token;
+  }
+}
+
+/** Parks a resolution token in the global routing table under `mediationId`. */
+- (void)parkPendingCompletion:(id<ASDKCampaignResolution>)resolution forMediationId:(NSString *)mediationId
+{
+  @synchronized (self) {
+    if (!self.pendingCompletions) {
+      self.pendingCompletions = [NSMutableDictionary new];
+    }
+    self.pendingCompletions[mediationId] = resolution;
+  }
+}
+
+/** Surfaces a gate present dispatch to JS. Emitter delivery is async; hop to main to match deeplink. */
+- (void)emitGatePresent:(NSDictionary *)payload
+{
+  dispatch_async(dispatch_get_main_queue(), ^{
+    [self emitOnCampaignPresent:payload];
+  });
 }
 
 - (void)resolveCampaign:(NSString *)mediationId
                  result:(NSString *)result
 {
-  id<ASDKCampaignResolution> completion = nil;
-  @synchronized (self) {
-    if (!self.pendingCompletions) { return; }
-    completion = self.pendingCompletions[mediationId];
-    if (completion) {
-      [self.pendingCompletions removeObjectForKey:mediationId];
-    }
-  }
+  id<ASDKCampaignResolution> completion = [self takePendingCompletionForMediationId:mediationId];
   if (!completion) {
     // Late/duplicate/unknown reply — the SDK token is the source of truth and is
     // already settled (or never existed). Ignore.
@@ -295,59 +408,58 @@ RCT_EXPORT_MODULE()
   }
   ASDKCampaignResult *mapped = AmplyCampaignResultFromString(result);
   RCTLogInfo(@"[AmplyReactNative] resolveCampaign mediationId=%@ result=%@", mediationId, result);
+  // Confirmed against the published header: CampaignResolution.resolve(result:) projects to
+  // -resolveResult:.
   [completion resolveResult:mapped];
 }
 
-- (void)registerCampaignPresenter
+/**
+ * Register the bridge as the gate presenter for `baseUrl`. JS is the single capability
+ * registry and routes by baseUrl on its side; the native gate carries the abort policy
+ * and timeout.
+ *
+ * FLAG (native-compile gate): the frozen KMP 0.5.0 API is
+ *   `registerGate(baseUrl, presenter, onAbort, timeoutMs)`.
+ * The selector below is written to the documented K/N convention
+ * (`-registerGateBaseUrl:presenter:onAbort:timeoutMs:`) and the ASDKAbortPolicy
+ * enum-case names (.cancel / .proceed) are assumed. BOTH the selector and the
+ * AbortPolicy projection MUST be confirmed against the published header before publish.
+ *
+ * Each registration gets its OWN AmplyGatePresenter instance owning its OWN "current
+ * presentation" slot, so a dismiss() delivered to this gate's presenter can only abandon THIS
+ * gate's live presentation — never one belonging to a different url-pattern's gate.
+ */
+- (void)registerGate:(NSString *)baseUrl
+             onAbort:(NSString *)onAbort
+           timeoutMs:(double)timeoutMs
 {
   if (!self.amplyInstance) {
-    RCTLogWarn(@"[AmplyReactNative] Cannot register campaign presenter - Amply not initialized");
-    return;
-  }
-  if (self.campaignPresenterRegistered) {
-    RCTLogInfo(@"[AmplyReactNative] Campaign presenter already registered");
+    RCTLogWarn(@"[AmplyReactNative] Cannot register gate - Amply not initialized");
     return;
   }
   if (!self.pendingCompletions) {
     self.pendingCompletions = [NSMutableDictionary new];
   }
-  RCTLogInfo(@"[AmplyReactNative] Registering campaign presenter");
-  // Catch-all registration: JS is the single capability registry and routes by URL.
-  [self.amplyInstance registerCampaignPresenterPresenter:self];
-  self.campaignPresenterRegistered = YES;
-}
-
-#pragma mark - ASDKCampaignPresenter
-
-/**
- * Called by the KMP SDK when a campaign dispatches a present (blocking) action.
- * We mint a mediationId, park the completion token, and surface the dispatch to JS.
- * JS later replies via resolveCampaign:result:.
- */
-- (void)onCampaignPresentUrl:(NSString *)url
-                        info:(NSDictionary<NSString *, id> *)info
-                  completion:(id<ASDKCampaignResolution>)completion
-{
-  NSString *mediationId = [[NSUUID UUID] UUIDString];
-  @synchronized (self) {
-    if (!self.pendingCompletions) {
-      self.pendingCompletions = [NSMutableDictionary new];
-    }
-    self.pendingCompletions[mediationId] = completion;
+  if (!self.gatePresenters) {
+    self.gatePresenters = [NSMutableArray new];
   }
 
-  RCTLogInfo(@"[AmplyReactNative] Dispatching campaign present mediationId=%@ url=%@", mediationId, url);
+  ASDKAbortPolicy *policy = [onAbort isEqualToString:@"proceed"]
+      ? ASDKAbortPolicy.proceed
+      : ASDKAbortPolicy.cancel;
 
-  NSDictionary *payload = @{
-    @"url": url ?: @"",
-    @"info": info ?: @{},
-    @"mediationId": mediationId
-  };
+  AmplyGatePresenter *presenter = [[AmplyGatePresenter alloc] init];
+  presenter.module = self;
+  presenter.baseUrl = baseUrl;
+  // Retain the presenter — the KMP gate registry does not keep it alive.
+  [self.gatePresenters addObject:presenter];
 
-  // Emitter delivery is async; emit on the main queue to match the deeplink path.
-  dispatch_async(dispatch_get_main_queue(), ^{
-    [self emitOnCampaignPresent:payload];
-  });
+  RCTLogInfo(@"[AmplyReactNative] Registering gate baseUrl=%@ onAbort=%@ timeoutMs=%f", baseUrl, onAbort, timeoutMs);
+  [self.amplyInstance registerGateBaseUrl:baseUrl
+                                presenter:presenter
+                                  onAbort:policy
+                                timeoutMs:(int64_t)timeoutMs];
+  self.gateRegistered = YES;
 }
 
 - (void)getRecentEvents:(double)limit
@@ -817,7 +929,9 @@ static ASDKDataSetType *AmplyDataSetTypeFromDictionary(NSDictionary *type, NSStr
 {
   [[NSNotificationCenter defaultCenter] removeObserver:self];
 
-  // Fail open any in-flight mediated actions so no continuation is left hanging.
+  // Fail open any in-flight gate presentations so no caller is left hanging. Each per-gate
+  // presenter clears its own current-presentation slot when its token is taken below; on dealloc
+  // the presenters themselves are released with the module.
   NSArray<id<ASDKCampaignResolution>> *inFlight = nil;
   @synchronized (self) {
     inFlight = self.pendingCompletions.allValues;
@@ -884,6 +998,86 @@ static ASDKDataSetType *AmplyDataSetTypeFromDictionary(NSDictionary *type, NSStr
 - (std::shared_ptr<TurboModule>)getTurboModule:(const ObjCTurboModule::InitParams &)params
 {
   return std::make_shared<NativeAmplyModuleSpecJSI>(params);
+}
+
+@end
+
+#pragma mark - AmplyGatePresenter (one instance per registerGate / url-pattern)
+
+@implementation AmplyGatePresenter
+
+/**
+ * Called by the KMP SDK when this gate dispatches its (blocking) presentation. We mint a
+ * mediationId, park the resolution token in the module's GLOBAL routing table, record it as
+ * THIS presenter's current presentation, and surface the dispatch to JS. JS later replies via
+ * resolveCampaign:result: (which routes by exact id, so it is unaffected by overlap).
+ *
+ * Confirmed against the published header: the presenter signature is
+ *   `present(params:info:resolution:)` -> `-presentParams:info:resolution:`,
+ * with params projected as NSDictionary<NSString *, NSString *>.
+ */
+- (void)presentParams:(NSDictionary<NSString *, NSString *> *)params
+                 info:(NSDictionary<NSString *, id> *)info
+           resolution:(id<ASDKCampaignResolution>)resolution
+{
+  Amply *module = self.module;
+  if (!module) {
+    // Module gone (teardown race) — drop the token so the SDK's own abort machinery proceeds.
+    RCTLogWarn(@"[AmplyReactNative] Gate[%@] present after module teardown; dropping", self.baseUrl);
+    return;
+  }
+
+  NSString *mediationId = [[NSUUID UUID] UUIDString];
+  [module parkPendingCompletion:resolution forMediationId:mediationId];
+  // Record THIS gate's live presentation so -dismiss releases exactly this token on abandon. A
+  // second present() on this same presenter overwrites it (concurrent same-pattern not supported;
+  // latest wins) — the prior id still lives in the global table for its own JS reply.
+  @synchronized (self) {
+    self.activeMediationId = mediationId;
+  }
+
+  // `info` carries the action url under @"url"; surface it for JS-side baseUrl routing.
+  NSString *url = [info[@"url"] isKindOfClass:[NSString class]] ? info[@"url"] : @"";
+
+  RCTLogInfo(@"[AmplyReactNative] Gate[%@] dispatching present mediationId=%@ url=%@", self.baseUrl, mediationId, url);
+
+  NSDictionary *payload = @{
+    @"url": url,
+    @"params": params ?: @{},
+    @"info": info ?: @{},
+    @"mediationId": mediationId
+  };
+
+  [module emitGatePresent:payload];
+}
+
+/**
+ * Tear down any UI this presenter put on screen WITHOUT producing a result. Called by the SDK
+ * when THIS gate's caller coroutine is cancelled/times out and the resolution token is abandoned.
+ *
+ * Presentation lives entirely in JS here (no native gate UI), so there is nothing to tear down —
+ * BUT the parked token MUST be released or the global pendingCompletions leaks on every
+ * timeout/cancel. We take THIS presenter's current presentation's token (at-most-once via
+ * -takePendingCompletionForMediationId:) and simply drop it: the SDK's own abort machinery owns
+ * the outcome here, so we must NOT also resolve it. A subsequent JS resolveCampaign: for the same
+ * id finds nothing and is a harmless no-op. Crucially, because the active id is per-presenter, an
+ * overlapping different-pattern gate's presentation can never be the one we abandon here.
+ */
+- (void)dismiss
+{
+  NSString *activeId = nil;
+  @synchronized (self) {
+    activeId = self.activeMediationId;
+    self.activeMediationId = nil;
+  }
+  if (!activeId) {
+    RCTLogInfo(@"[AmplyReactNative] Gate[%@] dismiss() with no active presentation", self.baseUrl);
+    return;
+  }
+  Amply *module = self.module;
+  id<ASDKCampaignResolution> abandoned = [module takePendingCompletionForMediationId:activeId];
+  RCTLogInfo(@"[AmplyReactNative] Gate[%@] dismiss() releasing mediationId=%@ (token %@)",
+             self.baseUrl, activeId, abandoned ? @"dropped" : @"already settled");
 }
 
 @end

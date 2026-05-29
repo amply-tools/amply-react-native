@@ -78,13 +78,15 @@ namespace JS {
 - (void)track:(JS::NativeAmplyModule::TrackEventPayload &)payload
       resolve:(RCTPromiseResolveBlock)resolve
        reject:(RCTPromiseRejectBlock)reject;
-- (void)trackEventGated:(NSString *)event
-             properties:(NSDictionary *)properties
-                resolve:(RCTPromiseResolveBlock)resolve
-                 reject:(RCTPromiseRejectBlock)reject;
+- (void)trackGated:(NSString *)event
+        properties:(NSDictionary *)properties
+           resolve:(RCTPromiseResolveBlock)resolve
+            reject:(RCTPromiseRejectBlock)reject;
 - (void)resolveCampaign:(NSString *)mediationId
                  result:(NSString *)result;
-- (void)registerCampaignPresenter;
+- (void)registerGate:(NSString *)baseUrl
+             onAbort:(NSString *)onAbort
+           timeoutMs:(double)timeoutMs;
 - (void)getRecentEvents:(double)limit
                 resolve:(RCTPromiseResolveBlock)resolve
                  reject:(RCTPromiseRejectBlock)reject;

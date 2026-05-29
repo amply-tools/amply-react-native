@@ -60,16 +60,16 @@ namespace facebook::react {
       return static_cast<ObjCTurboModule&>(turboModule).invokeObjCMethod(rt, PromiseKind, "track", @selector(track:resolve:reject:), args, count);
     }
 
-    static facebook::jsi::Value __hostFunction_NativeAmplyModuleSpecJSI_trackEventGated(facebook::jsi::Runtime& rt, TurboModule &turboModule, const facebook::jsi::Value* args, size_t count) {
-      return static_cast<ObjCTurboModule&>(turboModule).invokeObjCMethod(rt, PromiseKind, "trackEventGated", @selector(trackEventGated:properties:resolve:reject:), args, count);
+    static facebook::jsi::Value __hostFunction_NativeAmplyModuleSpecJSI_trackGated(facebook::jsi::Runtime& rt, TurboModule &turboModule, const facebook::jsi::Value* args, size_t count) {
+      return static_cast<ObjCTurboModule&>(turboModule).invokeObjCMethod(rt, PromiseKind, "trackGated", @selector(trackGated:properties:resolve:reject:), args, count);
     }
 
     static facebook::jsi::Value __hostFunction_NativeAmplyModuleSpecJSI_resolveCampaign(facebook::jsi::Runtime& rt, TurboModule &turboModule, const facebook::jsi::Value* args, size_t count) {
       return static_cast<ObjCTurboModule&>(turboModule).invokeObjCMethod(rt, VoidKind, "resolveCampaign", @selector(resolveCampaign:result:), args, count);
     }
 
-    static facebook::jsi::Value __hostFunction_NativeAmplyModuleSpecJSI_registerCampaignPresenter(facebook::jsi::Runtime& rt, TurboModule &turboModule, const facebook::jsi::Value* args, size_t count) {
-      return static_cast<ObjCTurboModule&>(turboModule).invokeObjCMethod(rt, VoidKind, "registerCampaignPresenter", @selector(registerCampaignPresenter), args, count);
+    static facebook::jsi::Value __hostFunction_NativeAmplyModuleSpecJSI_registerGate(facebook::jsi::Runtime& rt, TurboModule &turboModule, const facebook::jsi::Value* args, size_t count) {
+      return static_cast<ObjCTurboModule&>(turboModule).invokeObjCMethod(rt, VoidKind, "registerGate", @selector(registerGate:onAbort:timeoutMs:), args, count);
     }
 
     static facebook::jsi::Value __hostFunction_NativeAmplyModuleSpecJSI_getRecentEvents(facebook::jsi::Runtime& rt, TurboModule &turboModule, const facebook::jsi::Value* args, size_t count) {
@@ -132,13 +132,13 @@ namespace facebook::react {
         methodMap_["track"] = MethodMetadata {1, __hostFunction_NativeAmplyModuleSpecJSI_track};
         setMethodArgConversionSelector(@"track", 0, @"JS_NativeAmplyModule_TrackEventPayload:");
         
-        methodMap_["trackEventGated"] = MethodMetadata {2, __hostFunction_NativeAmplyModuleSpecJSI_trackEventGated};
+        methodMap_["trackGated"] = MethodMetadata {2, __hostFunction_NativeAmplyModuleSpecJSI_trackGated};
         
         
         methodMap_["resolveCampaign"] = MethodMetadata {2, __hostFunction_NativeAmplyModuleSpecJSI_resolveCampaign};
         
         
-        methodMap_["registerCampaignPresenter"] = MethodMetadata {0, __hostFunction_NativeAmplyModuleSpecJSI_registerCampaignPresenter};
+        methodMap_["registerGate"] = MethodMetadata {3, __hostFunction_NativeAmplyModuleSpecJSI_registerGate};
         
         
         methodMap_["getRecentEvents"] = MethodMetadata {1, __hostFunction_NativeAmplyModuleSpecJSI_getRecentEvents};

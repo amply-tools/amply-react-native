@@ -3,6 +3,7 @@ package tools.amply.sdk.reactnative
 import android.app.Application
 import tools.amply.sdk.reactnative.core.AmplyClient
 import tools.amply.sdk.reactnative.core.DefaultAmplyClient
+import tools.amply.sdk.reactnative.core.GateDecision
 import tools.amply.sdk.reactnative.model.AmplyInitializationOptions
 import tools.amply.sdk.reactnative.model.DataSetType
 import tools.amply.sdk.reactnative.model.DataSetType.EventParam
@@ -94,32 +95,24 @@ class AmplyModule(reactContext: ReactApplicationContext) :
     }
   }
 
-  override fun trackEventGated(event: String, properties: ReadableMap, promise: Promise) {
+  override fun trackGated(event: String, properties: ReadableMap, promise: Promise) {
     if (event.isBlank()) {
-      promise.reject(ARGUMENT_ERROR, "Event 'event' is required")
+      // The JS contract is "trackGated never rejects" — fail open instead.
+      android.util.Log.w(TAG, "trackGated with blank event; failing open")
+      promise.resolve(GateDecision.FAIL_OPEN.toWritableMap())
       return
     }
     val props = properties.toHashMap()
-    // The Promise IS the continuation. We resolve "complete"/"cancel" exactly once;
-    // the KMP overload guarantees exactly-once main-thread delivery, and resolveOnce
-    // guards against the (impossible-but-defensive) double settle.
-    val resolved = java.util.concurrent.atomic.AtomicBoolean(false)
-    fun resolveOnce(decision: String) {
-      if (resolved.compareAndSet(false, true)) {
-        promise.resolve(decision)
+    scope.launch {
+      // client.trackGated never throws (it collapses every error path to FAIL_OPEN),
+      // but guard defensively so the promise can never reject.
+      val decision = try {
+        client.trackGated(event, props)
+      } catch (throwable: Throwable) {
+        android.util.Log.w(TAG, "trackGated failed; failing open", throwable)
+        GateDecision.FAIL_OPEN
       }
-    }
-    try {
-      client.trackEventGated(
-        event,
-        props,
-        onProceed = { resolveOnce("complete") },
-        onCancel = { resolveOnce("cancel") },
-      )
-    } catch (throwable: Throwable) {
-      // Fail open: a synchronous failure proceeds rather than stranding the app.
-      android.util.Log.w(TAG, "trackEventGated failed; proceeding (fail-open)", throwable)
-      resolveOnce("complete")
+      promise.resolve(decision.toWritableMap())
     }
   }
 
@@ -127,20 +120,20 @@ class AmplyModule(reactContext: ReactApplicationContext) :
     client.resolveCampaign(mediationId, result)
   }
 
-  override fun registerCampaignPresenter() {
+  override fun registerGate(baseUrl: String, onAbort: String, timeoutMs: Double) {
     if (campaignPresenterJob == null) {
       campaignPresenterJob = scope.launch {
         client.campaignPresents.collect { payload ->
           android.util.Log.i(
             TAG,
-            "Emitting campaign present to JS mediationId=${payload.mediationId} url=${payload.url}"
+            "Emitting gate present to JS mediationId=${payload.mediationId} url=${payload.url}"
           )
-          emitCampaignPresent(payload.mediationId, payload.url, payload.info)
+          emitCampaignPresent(payload.mediationId, payload.url, payload.params, payload.info)
         }
       }
-      android.util.Log.i(TAG, "Started campaign present collection job")
+      android.util.Log.i(TAG, "Started gate present collection job")
     }
-    client.registerCampaignPresenter()
+    client.registerGate(baseUrl, onAbort, timeoutMs.toLong())
   }
 
   override fun getRecentEvents(limit: Double, promise: Promise) {
@@ -280,14 +273,32 @@ class AmplyModule(reactContext: ReactApplicationContext) :
     android.util.Log.d(TAG, "emitOnDeepLink completed")
   }
 
-  private fun emitCampaignPresent(mediationId: String, url: String, info: Map<String, Any?>) {
+  private fun emitCampaignPresent(
+    mediationId: String,
+    url: String,
+    params: Map<String, Any?>,
+    info: Map<String, Any?>,
+  ) {
     val map = Arguments.createMap().apply {
       putString("url", url)
+      putMap("params", params.toWritableMap())
       putMap("info", info.toWritableMap())
       putString("mediationId", mediationId)
     }
     // emitOnCampaignPresent comes from NativeAmplyModuleSpec (codegen).
     emitOnCampaignPresent(map)
+  }
+
+  // Renders the bridge GateDecision into the JS-facing map:
+  //   { outcome: "proceed", reason: "completed" | "failOpen" } | { outcome: "cancelled" }
+  private fun GateDecision.toWritableMap(): WritableMap = Arguments.createMap().apply {
+    when (this@toWritableMap) {
+      is GateDecision.Proceed -> {
+        putString("outcome", "proceed")
+        putString("reason", reason.wire)
+      }
+      GateDecision.Cancelled -> putString("outcome", "cancelled")
+    }
   }
 
   private fun emitSystemEvent(event: EventEnvelope) {

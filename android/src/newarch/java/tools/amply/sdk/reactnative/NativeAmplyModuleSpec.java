@@ -60,7 +60,7 @@ public abstract class NativeAmplyModuleSpec extends ReactContextBaseJavaModule i
 
   @ReactMethod
   @DoNotStrip
-  public abstract void trackEventGated(String event, ReadableMap properties, Promise promise);
+  public abstract void trackGated(String event, ReadableMap properties, Promise promise);
 
   @ReactMethod
   @DoNotStrip
@@ -68,7 +68,7 @@ public abstract class NativeAmplyModuleSpec extends ReactContextBaseJavaModule i
 
   @ReactMethod
   @DoNotStrip
-  public abstract void registerCampaignPresenter();
+  public abstract void registerGate(String baseUrl, String onAbort, double timeoutMs);
 
   @ReactMethod
   @DoNotStrip
