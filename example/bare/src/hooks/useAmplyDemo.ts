@@ -6,10 +6,13 @@ import Amply, {
   systemEvents,
 } from '@amply/amply-react-native';
 
+// Supply your own Amply API keys. Replace these placeholders (or wire them to
+// your own untracked config/env) before running the example — real credentials
+// must never be committed.
 const SAMPLE_CONFIG = {
   appId: 'tools.amply.sample',
-  apiKeyPublic: '58572785b5',
-  apiKeySecret: 'cd81c4039052cae270d7',
+  apiKeyPublic: 'YOUR_API_KEY_PUBLIC',
+  apiKeySecret: 'YOUR_API_KEY_SECRET',
   debug: true,
 } as const;
 

@@ -7,10 +7,14 @@ import Amply, {
 } from '@amplytools/react-native-amply-sdk';
 import { routeAmplyUrl } from '../utils/amplyDeepLinkRouter';
 
+// Supply your own Amply API keys. The example reads them from Expo public env
+// vars (set EXPO_PUBLIC_AMPLY_API_KEY_PUBLIC / EXPO_PUBLIC_AMPLY_API_KEY_SECRET
+// in an untracked .env file) and falls back to obvious placeholders so the
+// example never ships real credentials in source.
 const SAMPLE_CONFIG = {
   appId: 'tools.amply.sample',
-  apiKeyPublic: '58572785b5',
-  apiKeySecret: 'cd81c4039052cae270d7',
+  apiKeyPublic: process.env.EXPO_PUBLIC_AMPLY_API_KEY_PUBLIC ?? 'YOUR_API_KEY_PUBLIC',
+  apiKeySecret: process.env.EXPO_PUBLIC_AMPLY_API_KEY_SECRET ?? 'YOUR_API_KEY_SECRET',
   debug: true,
 } as const;
 
