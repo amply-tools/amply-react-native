@@ -1,7 +1,5 @@
 # Amply React Native SDK
 
-> **[Amply](https://amply.tools)** is in-app orchestration for mobile apps: growth, product, and marketing teams decide which experience each user gets, and when — from a dashboard, without a new release or ongoing engineering work. Engineering integrates the SDK once; the team runs the experiments from then on.
-
 React Native TurboModule bridge for the Amply SDK. Enables event tracking, deeplink campaigns, and real-time data collection in React Native apps.
 
 ## Features
