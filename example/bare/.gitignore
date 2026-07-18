@@ -59,6 +59,8 @@ yarn-error.log
 # Ruby / CocoaPods
 **/Pods/
 /vendor/bundle/
+# pod install generates the workspace; Podfile.lock IS tracked (native-gate pin)
+**/*.xcworkspace/
 
 # Temporary files created by Metro to check the health of the file watcher
 .metro-health-check*

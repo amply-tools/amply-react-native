@@ -527,7 +527,9 @@ static NSArray<ASDKDataSetTypeEventParam *> *AmplyEventParamsFromArray(id raw, B
       if (outDroppedNullValue) *outDroppedNullValue = YES;
       continue;
     }
-    [result addObject:[[ASDKDataSetTypeEventParam alloc] initWithName:name value:value compareType:@"==="]];
+    // valueType:nil → SDK falls back to raw attribute columns (no typed coercion),
+    // matching the Android bridge which relies on the Kotlin default.
+    [result addObject:[[ASDKDataSetTypeEventParam alloc] initWithName:name value:value compareType:@"===" valueType:nil]];
   }
   return result;
 }
@@ -592,7 +594,9 @@ static ASDKDataSetType *AmplyDataSetTypeFromDictionary(NSDictionary *type, NSStr
       BOOL droppedNullValue = NO;
       NSArray<ASDKDataSetTypeEventParam *> *params = AmplyEventParamsFromArray(eventDict[@"params"], &droppedNullValue);
       if (droppedNullValue) continue;
-      [events addObject:[[ASDKDataSetTypeEventsEvent alloc] initWithName:eventNameStr type:eventType params:params]];
+      // id:nil → id-less declaration (limits-style): not projected into
+      // @events.aggregates, still fully queryable through @events.data.
+      [events addObject:[[ASDKDataSetTypeEventsEvent alloc] initWithName:eventNameStr type:eventType params:params id:nil]];
     }
     return [[ASDKDataSetTypeEvents alloc] initWithData:events];
   }

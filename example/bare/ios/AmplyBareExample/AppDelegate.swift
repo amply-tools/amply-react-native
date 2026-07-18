@@ -1,7 +1,8 @@
 import UIKit
 import React
 import React_RCTAppDelegate
-import React_RCTLinking
+// RCTLinkingManager comes from AmplyBareExample-Bridging-Header.h —
+// React-RCTLinking is a static pod without a Swift module.
 import ReactAppDependencyProvider
 
 @main

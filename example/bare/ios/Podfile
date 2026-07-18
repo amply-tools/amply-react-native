@@ -31,5 +31,16 @@ target 'AmplyBareExample' do
       :mac_catalyst_enabled => false,
       # :ccache_enabled => true
     )
+
+    # fmt 11 (vendored by RN) fails under Xcode 26+ clang with consteval enabled:
+    # "call to consteval function ... is not a constant expression" in format-inl.h.
+    # Building the fmt target as C++17 flips fmt's own detection to disable
+    # consteval (FMT_CPLUSPLUS < 201709L). Compile-time only, no ABI impact.
+    installer.pods_project.targets.each do |target|
+      next unless target.name == 'fmt'
+      target.build_configurations.each do |build_config|
+        build_config.build_settings['CLANG_CXX_LANGUAGE_STANDARD'] = 'c++17'
+      end
+    end
   end
 end

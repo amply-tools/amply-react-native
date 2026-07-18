@@ -32,6 +32,7 @@ module.exports = {
     favicon: './assets/images/favicon.png'
   },
   plugins: [
+    './plugins/withFmtCpp17',
     'expo-router',
     ['expo-splash-screen', {
       image: './assets/images/splash-icon.png',
