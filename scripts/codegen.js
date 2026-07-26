@@ -213,10 +213,117 @@ function generateModule(name, moduleConfig) {
   }
 }
 
-// Обрабатываем все модули из codegen.config.json
-Object.entries(config.modules).forEach(([name, moduleConfig]) => {
-  if (moduleConfig.type !== 'NativeModule') {
-    return;
+/**
+ * Every file generation writes into, for every configured module.
+ *
+ * Used by --check to snapshot before and compare after, so the check can tell
+ * "the committed output matches the spec" from "someone edited the spec and
+ * forgot to regenerate" without depending on git state.
+ */
+function generatedOutputDirs() {
+  const dirs = new Set();
+  Object.values(config.modules).forEach((moduleConfig) => {
+    if (moduleConfig.type !== 'NativeModule') {
+      return;
+    }
+    if (moduleConfig.android?.sourceDir) {
+      dirs.add(path.resolve(ROOT, moduleConfig.android.sourceDir));
+    }
+    if (moduleConfig.ios?.sourceDir) {
+      dirs.add(path.resolve(ROOT, moduleConfig.ios.sourceDir));
+    }
+  });
+  return [...dirs];
+}
+
+function snapshotTree(dir, acc = new Map()) {
+  if (!fs.existsSync(dir)) {
+    return acc;
   }
-  generateModule(name, moduleConfig);
-});
+  fs.readdirSync(dir, {withFileTypes: true}).forEach((entry) => {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      snapshotTree(full, acc);
+    } else if (entry.isFile()) {
+      acc.set(full, fs.readFileSync(full));
+    }
+  });
+  return acc;
+}
+
+function runAllModules() {
+  Object.entries(config.modules).forEach(([name, moduleConfig]) => {
+    if (moduleConfig.type !== 'NativeModule') {
+      return;
+    }
+    generateModule(name, moduleConfig);
+  });
+}
+
+/**
+ * Verifies the committed generated sources still match the TypeScript spec.
+ *
+ * The generated ObjC++/JNI types live in the repository, so a spec edit without
+ * a regeneration leaves them describing an older contract. Nothing catches that
+ * until something compiles against the missing members — which, for iOS, is the
+ * release pipeline's native gate, twenty minutes and a published KMP artifact
+ * later. This turns that into a two-second failure.
+ *
+ * Non-destructive: regenerates, compares against the snapshot taken first, and
+ * puts the originals back either way, so running it never leaves the tree in a
+ * state the caller did not ask for.
+ */
+function check() {
+  const dirs = generatedOutputDirs();
+  const before = new Map();
+  dirs.forEach((dir) => snapshotTree(dir, before));
+
+  runAllModules();
+
+  const after = new Map();
+  dirs.forEach((dir) => snapshotTree(dir, after));
+
+  const changed = [];
+  after.forEach((content, file) => {
+    const previous = before.get(file);
+    if (previous === undefined) {
+      changed.push(`${path.relative(ROOT, file)} (missing — never generated)`);
+    } else if (!previous.equals(content)) {
+      changed.push(path.relative(ROOT, file));
+    }
+  });
+  before.forEach((content, file) => {
+    if (!after.has(file)) {
+      changed.push(`${path.relative(ROOT, file)} (stale — no longer generated)`);
+    }
+  });
+
+  // Restore whatever was committed, including files generation created.
+  after.forEach((_, file) => {
+    if (!before.has(file)) {
+      fs.rmSync(file, {force: true});
+    }
+  });
+  before.forEach((content, file) => fs.writeFileSync(file, content));
+
+  if (changed.length > 0) {
+    console.error(
+      'Generated sources are out of date with ' +
+        Object.values(config.modules)
+          .map((m) => m.jsSpecFile)
+          .join(', ') +
+        ':\n'
+    );
+    changed.forEach((file) => console.error(`  ${file}`));
+    console.error('\nRun `node scripts/codegen.js` and commit the result.');
+    process.exit(1);
+  }
+
+  console.log('Generated sources are up to date with the TypeScript spec.');
+}
+
+if (process.argv.includes('--check')) {
+  check();
+} else {
+  runAllModules();
+}

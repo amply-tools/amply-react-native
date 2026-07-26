@@ -36,6 +36,37 @@ describe('Amply JS API', () => {
     );
   });
 
+  it('passes the base-URL overrides through to the native layer', async () => {
+    await Amply.initialize({
+      appId: 'id',
+      apiKeyPublic: 'public',
+      configBaseUrl: 'https://config-staging.example.com',
+      backendBaseUrl: 'https://api-staging.example.com',
+    });
+
+    expect(mockNativeModule.initialize).toHaveBeenCalledWith(
+      expect.objectContaining({
+        configBaseUrl: 'https://config-staging.example.com',
+        backendBaseUrl: 'https://api-staging.example.com',
+      })
+    );
+  });
+
+  // `endpoint` is the older single-URL spelling. It stays accepted so existing
+  // callers keep working, but it only ever meant the backend host — the campaign
+  // manifest is served from a different one.
+  it('still accepts the legacy endpoint spelling', async () => {
+    await Amply.initialize({
+      appId: 'id',
+      apiKeyPublic: 'public',
+      endpoint: 'https://api-staging.example.com',
+    });
+
+    expect(mockNativeModule.initialize).toHaveBeenCalledWith(
+      expect.objectContaining({ endpoint: 'https://api-staging.example.com' })
+    );
+  });
+
   it('tracks events through the native layer', async () => {
     await Amply.track({ name: 'Test Event', properties: { foo: 'bar' } });
 

@@ -28,6 +28,9 @@ data class AmplyInitializationOptions(
   val appId: String,
   val apiKeyPublic: String,
   val apiKeySecret: String?,
+  val configBaseUrl: String?,
+  val backendBaseUrl: String?,
+  /** Older single-URL spelling of [backendBaseUrl]; see [effectiveBackendBaseUrl]. */
   val endpoint: String?,
   val defaultConfig: String?,
   val debug: Boolean?,
@@ -40,4 +43,13 @@ data class AmplyInitializationOptions(
     fun getEffectiveLogLevel(): LogLevel {
         return logLevel ?: if (debug == true) LogLevel.DEBUG else LogLevel.NONE
     }
+
+    /**
+     * The backend host to use, resolving the legacy [endpoint] spelling.
+     *
+     * [backendBaseUrl] wins when both are given: a caller who names the new field
+     * has said what they mean, and silently preferring the deprecated one would
+     * make the migration surprising.
+     */
+    fun effectiveBackendBaseUrl(): String? = backendBaseUrl ?: endpoint
 }

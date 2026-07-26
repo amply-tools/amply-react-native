@@ -5,5 +5,12 @@ rootProject.name = 'AmplyBareExample'
 include ':app'
 includeBuild('../node_modules/@react-native/gradle-plugin')
 
-include ':amplyreactnative'
-project(':amplyreactnative').projectDir = new File(rootProject.projectDir, '../../../android')
+// The bridge is registered by autolinking alone. `react-native.config.js` points
+// the dependency at the library root, so autolinking builds it from source
+// exactly as an explicit include would.
+//
+// It used to ALSO be included explicitly here, which registered the same
+// directory as a second Gradle project. Two projects sharing one build
+// directory is a configuration Gradle rejects — it only ever built because a
+// stale autolinking cache kept the second one from appearing, so a clean
+// checkout or `rm -rf build` broke the example.

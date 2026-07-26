@@ -439,11 +439,22 @@ class DefaultAmplyClient(
   }
 
   private fun buildConfig(options: AmplyInitializationOptions): AmplyConfig {
+    val backend = options.effectiveBackendBaseUrl()
     return amplyConfig {
       api {
         appId = options.appId
         apiKeyPublic = options.apiKeyPublic
         options.apiKeySecret?.let { apiKeySecret = it }
+      }
+      // Applied rather than merely accepted. These were parsed out of the JS
+      // config and then dropped on the floor, so an integrator who pointed the
+      // app at a staging stack kept talking to production — no error, no log,
+      // just their test traffic landing in real analytics.
+      if (options.configBaseUrl != null || backend != null) {
+        network {
+          options.configBaseUrl?.let { configBaseUrl = it }
+          backend?.let { backendBaseUrl = it }
+        }
       }
       options.defaultConfig?.let { defaultConfig = it }
     }

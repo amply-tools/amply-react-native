@@ -1,6 +1,6 @@
 {
   "name": "@amplytools/react-native-amply-sdk",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "React Native SDK for Amply: Mobile SDK to orchestrate in-app experiences and campaigns remotely, without app releases",
   "license": "MIT",
   "repository": {
@@ -33,9 +33,11 @@
     "build": "expo-module build",
     "build:plugin": "expo-module build plugin",
     "clean": "expo-module clean",
-    "test": "expo-module test",
+    "test": "node scripts/codegen.js --check && expo-module test",
     "prepare": "expo-module prepare",
-    "prepublishOnly": "expo-module prepublishOnly"
+    "prepublishOnly": "expo-module prepublishOnly",
+    "codegen": "node scripts/codegen.js",
+    "codegen:check": "node scripts/codegen.js --check"
   },
   "peerDependencies": {
     "expo": ">=54.0.0",

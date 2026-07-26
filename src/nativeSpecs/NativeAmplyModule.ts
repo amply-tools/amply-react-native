@@ -18,6 +18,22 @@ export type AmplyInitializationConfig = {
   appId: string;
   apiKeyPublic: string;
   apiKeySecret?: string | null;
+  /**
+   * Base URL for the campaign manifest.
+   *
+   * The manifest and the event API are served from DIFFERENT hosts, so pointing
+   * an app at a non-production stack takes both this and {@link backendBaseUrl}.
+   * Setting only one leaves the other half of the traffic on production, which
+   * is the failure this pair exists to make impossible to hit by accident.
+   */
+  configBaseUrl?: string | null;
+  /** Base URL for session and event delivery. See {@link configBaseUrl}. */
+  backendBaseUrl?: string | null;
+  /**
+   * @deprecated Older single-URL spelling of {@link backendBaseUrl}, kept so
+   * existing callers keep working. It never covered the manifest host — prefer
+   * naming both explicitly. Ignored when `backendBaseUrl` is also given.
+   */
   endpoint?: string | null;
   defaultConfig?: string | null;
   /**

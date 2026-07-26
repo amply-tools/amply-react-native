@@ -38,6 +38,8 @@ namespace JS {
       NSString *appId() const;
       NSString *apiKeyPublic() const;
       NSString *apiKeySecret() const;
+      NSString *configBaseUrl() const;
+      NSString *backendBaseUrl() const;
       NSString *endpoint() const;
       NSString *defaultConfig() const;
       std::optional<bool> debug() const;
@@ -141,6 +143,16 @@ inline NSString *JS::NativeAmplyModule::AmplyInitializationConfig::apiKeyPublic(
 inline NSString *JS::NativeAmplyModule::AmplyInitializationConfig::apiKeySecret() const
 {
   id const p = _v[@"apiKeySecret"];
+  return RCTBridgingToOptionalString(p);
+}
+inline NSString *JS::NativeAmplyModule::AmplyInitializationConfig::configBaseUrl() const
+{
+  id const p = _v[@"configBaseUrl"];
+  return RCTBridgingToOptionalString(p);
+}
+inline NSString *JS::NativeAmplyModule::AmplyInitializationConfig::backendBaseUrl() const
+{
+  id const p = _v[@"backendBaseUrl"];
   return RCTBridgingToOptionalString(p);
 }
 inline NSString *JS::NativeAmplyModule::AmplyInitializationConfig::endpoint() const

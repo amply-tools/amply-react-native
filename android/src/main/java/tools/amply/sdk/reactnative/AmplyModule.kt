@@ -333,6 +333,8 @@ class AmplyModule(reactContext: ReactApplicationContext) :
     val apiKeyPublic = getString("apiKeyPublic") ?: throw IllegalArgumentException("'apiKeyPublic' is required")
 
     val apiKeySecret = if (hasKey("apiKeySecret")) getString("apiKeySecret") else null
+    val configBaseUrl = if (hasKey("configBaseUrl")) getString("configBaseUrl") else null
+    val backendBaseUrl = if (hasKey("backendBaseUrl")) getString("backendBaseUrl") else null
     val endpoint = if (hasKey("endpoint")) getString("endpoint") else null
     val defaultConfig = if (hasKey("defaultConfig")) getString("defaultConfig") else null
     val debug = if (hasKey("debug")) getBoolean("debug") else null
@@ -342,6 +344,8 @@ class AmplyModule(reactContext: ReactApplicationContext) :
       appId = appId,
       apiKeyPublic = apiKeyPublic,
       apiKeySecret = apiKeySecret,
+      configBaseUrl = configBaseUrl,
+      backendBaseUrl = backendBaseUrl,
       endpoint = endpoint,
       defaultConfig = defaultConfig,
       debug = debug,

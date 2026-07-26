@@ -121,7 +121,15 @@ RCT_EXPORT_MODULE()
     NSString *appId = config.appId();
     NSString *apiKeyPublic = config.apiKeyPublic();
     NSString *apiKeySecret = config.apiKeySecret();
+    NSString *configBaseUrl = config.configBaseUrl();
+    NSString *backendBaseUrl = config.backendBaseUrl();
+    NSString *legacyEndpoint = config.endpoint();
     NSString *defaultConfig = config.defaultConfig();
+
+    // `backendBaseUrl` wins over the deprecated `endpoint` when both are given:
+    // a caller who names the new field has said what they mean.
+    NSString *effectiveBackendBaseUrl =
+        (backendBaseUrl && backendBaseUrl.length > 0) ? backendBaseUrl : legacyEndpoint;
 
     if (!appId || appId.length == 0) {
       if (reject) {
@@ -148,6 +156,23 @@ RCT_EXPORT_MODULE()
         apiBuilder.apiKeySecret = apiKeySecret;
       }
     }];
+
+    // Applied rather than merely accepted. These were never read at all here, so
+    // an integrator pointing the app at a staging stack kept talking to
+    // production — no error, no log, just their test traffic landing in real
+    // analytics. The manifest and the event API live on different hosts, which
+    // is why there are two of them.
+    if ((configBaseUrl && configBaseUrl.length > 0) ||
+        (effectiveBackendBaseUrl && effectiveBackendBaseUrl.length > 0)) {
+      [configBuilder networkBlock:^(ASDKAmplyNetworkBuilder *networkBuilder) {
+        if (configBaseUrl && configBaseUrl.length > 0) {
+          networkBuilder.configBaseUrl = configBaseUrl;
+        }
+        if (effectiveBackendBaseUrl && effectiveBackendBaseUrl.length > 0) {
+          networkBuilder.backendBaseUrl = effectiveBackendBaseUrl;
+        }
+      }];
+    }
 
     // Set default config if provided
     if (defaultConfig && defaultConfig.length > 0) {
