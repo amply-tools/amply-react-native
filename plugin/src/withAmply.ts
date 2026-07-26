@@ -8,6 +8,14 @@
  * in their app.json plugins array (from earlier versions) continue to work
  * without changes. You can safely remove the entry from your app.json.
  *
+ * Deliberately silent. It used to print that removal notice on every config
+ * evaluation, which meant every `expo prebuild` of every project that still
+ * carried the legacy entry — a line nobody could act on from inside their build
+ * output, repeated forever. The guidance lives where someone can actually use
+ * it: the integration skill and the docs. Do NOT delete this file to "finish
+ * the job" either; `app.plugin.js` resolves to it, and a project with the entry
+ * in app.json would fail prebuild outright.
+ *
  * Background: pre-0.2.12 the package shipped expo-module.config.json, which
  * made expo-modules-autolinking classify it as an Expo Module. Because the
  * SDK is actually a plain TurboModule (no expo.modules.kotlin subclass),
@@ -24,17 +32,6 @@ type WithAmplyPluginProps = {
   // Reserved for future use.
 };
 
-const withAmply: ConfigPlugin<WithAmplyPluginProps> = (config) => {
-  if (process.env.NODE_ENV !== 'production') {
-    // eslint-disable-next-line no-console
-    console.log(
-      '[amply] @amplytools/react-native-amply-sdk: the Expo config plugin is ' +
-        'no longer required (autolinking handles native registration). You can ' +
-        'safely remove "@amplytools/react-native-amply-sdk" from the `plugins` ' +
-        'array in your app.json.'
-    );
-  }
-  return config;
-};
+const withAmply: ConfigPlugin<WithAmplyPluginProps> = (config) => config;
 
 export default withAmply;

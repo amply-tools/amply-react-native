@@ -1,10 +1,10 @@
 PODS:
   - AmplyReactNative (0.1.0):
-    - AmplySDK (~> 0.6.1)
+    - AmplySDK (~> 0.7.0)
     - React-Core
     - React-RCTFabric
     - ReactCommon/turbomodule/core
-  - AmplySDK (0.6.1)
+  - AmplySDK (0.7.0)
   - boost (1.84.0)
   - DoubleConversion (1.1.6)
   - fast_float (8.0.0)
@@ -2705,8 +2705,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/react-native/ReactCommon/yoga"
 
 SPEC CHECKSUMS:
-  AmplyReactNative: ac37a15365e42e8efa61e0590237f13225e3f6a5
-  AmplySDK: ec4bbeab34e13dd5a7c3aaf4d69b4a9704635a60
+  AmplyReactNative: 1cbd9dcb8d895facf3a990a8934c5fd6ada4077e
+  AmplySDK: 730d85f750c0bb5cb07412731f8e9e259d47d0fa
   boost: 7e761d76ca2ce687f7cc98e698152abd03a18f90
   DoubleConversion: cb417026b2400c8f53ae97020b2be961b59470cb
   fast_float: b32c788ed9c6a8c584d114d0047beda9664e7cc6
