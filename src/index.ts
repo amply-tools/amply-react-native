@@ -133,6 +133,14 @@ export function isInitialized(): boolean {
   return getNativeModule().isInitialized();
 }
 
+/**
+ * Records an event. Fire-and-forget: the promise resolves once the event has been handed
+ * to the native SDK, not when a campaign finishes. A campaign matched by this event runs
+ * on its own and never blocks the caller — use {@link trackGated} at a call site that has
+ * to wait for a campaign's outcome before continuing.
+ *
+ * {@link trackEvent} is the same call with positional arguments.
+ */
 export async function track(payload: TrackEventPayload): Promise<void> {
   await getNativeModule().track(payload);
 }
@@ -193,9 +201,11 @@ export type RegisterGateOptions = {
 };
 
 /**
- * Fire-and-forget analytics track. Records the event and lets any matching NORMAL
- * campaign action dispatch as usual. A gate action matched here will NOT block —
- * there is no caller to gate. Use {@link trackGated} to await a gate.
+ * Records an event — the positional-argument form of {@link track}, shaped like
+ * {@link trackGated} so gated and non-gated call sites read the same. Behaviour is
+ * identical to {@link track}: fire-and-forget, never blocks on a campaign.
+ *
+ * Both forms are supported; pick one and stay consistent within a codebase.
  */
 export async function trackEvent(
   event: string,

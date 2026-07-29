@@ -2,6 +2,9 @@
 #import <UIKit/UIKit.h>
 #import <React/RCTBridgeModule.h>
 #import <React/RCTConvert.h>
+// Not pulled in by RCTBridgeModule.h — the module conforms to RCTInvalidating so it can withdraw
+// itself from the SDK's process-scoped Logger when the bridge is torn down.
+#import <React/RCTInvalidating.h>
 #import <React/RCTLog.h>
 #import <ReactCommon/RCTTurboModule.h>
 #import "AmplyReactNative/AmplyReactNative.h"
@@ -62,7 +65,10 @@ static ASDKCampaignResult* AmplyCampaignResultFromString(NSString *result) {
 
 // The module owns the GLOBAL routing table and the JS emitter; each registered gate gets its
 // OWN AmplyGatePresenter instance (below) that owns the per-gate "current presentation" slot.
-@interface Amply : NativeAmplyModuleSpecBase <NativeAmplyModuleSpec, ASDKDeepLinkListener, ASDKSystemEventsListener, ASDKLogListener>
+// RCTInvalidating is load-bearing, not decoration: the SDK's Logger is a process-scoped Kotlin
+// object that holds this module STRONGLY, so -dealloc never runs while we are its listener.
+// Unregistering has to happen on bridge teardown or it never happens at all.
+@interface Amply : NativeAmplyModuleSpecBase <NativeAmplyModuleSpec, ASDKDeepLinkListener, ASDKSystemEventsListener, ASDKLogListener, RCTInvalidating>
 @property (nonatomic, strong) ASDKAmply *amplyInstance;
 @property (nonatomic, assign) BOOL deepLinkListenerRegistered;
 @property (nonatomic, assign) BOOL gateRegistered;
@@ -954,8 +960,34 @@ static ASDKDataSetType *AmplyDataSetTypeFromDictionary(NSDictionary *type, NSStr
   }
 }
 
+- (void)invalidate
+{
+  // The bridge is going away, and with it the JS emitter every callback below writes into. The
+  // SDK, however, is process-scoped and keeps running — its background coroutines (the events
+  // ticker, the campaign loader) go on logging. If we are still installed as the log listener at
+  // that point, each of those calls reaches a module whose emitter is dead, and the exception
+  // that raises crosses back into Kotlin/Native, which terminates the process rather than
+  // unwinding. That is the "crashes about every other launch" on a JS reload.
+  //
+  // clearListener COMPARES before clearing, so a replacement module that has already installed
+  // itself is not silenced by this one's teardown.
+  [[ASDKLogger shared] clearListenerListener:self];
+
+  // All three seams, not just the logger. The deeplink registration APPENDS, so leaving it behind
+  // does not merely leak this module — every reload adds another dead listener and each future
+  // deeplink is fanned out to all of them.
+  [self.amplyInstance clearSystemEventsListenerListener:self];
+  [self.amplyInstance removeDeepLinkListenerListener:self];
+
+  [[NSNotificationCenter defaultCenter] removeObserver:self];
+  self.logListenerRegistered = NO;
+  self.deepLinkListenerRegistered = NO;
+}
+
 - (void)dealloc
 {
+  // Belt and braces. In practice this rarely runs while the SDK holds us — see -invalidate.
+  [[ASDKLogger shared] clearListenerListener:self];
   [[NSNotificationCenter defaultCenter] removeObserver:self];
 
   // Fail open any in-flight gate presentations so no caller is left hanging. Each per-gate
@@ -988,7 +1020,14 @@ static ASDKDataSetType *AmplyDataSetTypeFromDictionary(NSDictionary *type, NSStr
     @"properties": event.properties ?: @{}
   };
 
-  [self emitOnSystemEvent:payload];
+  // Same boundary, same hazard as -onLogEntry:. The system-events channel is also called from
+  // Kotlin background coroutines and also writes into the JS emitter, so it can outlive the
+  // bridge in exactly the same way. Guarded here rather than waiting for the second crash report.
+  @try {
+    [self emitOnSystemEvent:payload];
+  } @catch (NSException *exception) {
+    RCTLogWarn(@"[AmplyReactNative] Dropped a system event: %@", exception.reason);
+  }
 }
 
 #pragma mark - ASDKLogListener
@@ -1021,7 +1060,16 @@ static ASDKDataSetType *AmplyDataSetTypeFromDictionary(NSDictionary *type, NSStr
     @"properties": properties
   };
 
-  [self emitOnSystemEvent:payload];
+  // This method is called FROM Kotlin/Native, across the ObjC boundary. An NSException raised
+  // here does not unwind back into Kotlin — the runtime's terminate handler kills the process,
+  // which is why a dead JS emitter shows up as std::terminate with no app frame in the stack.
+  // A Kotlin-side try/catch cannot catch this; it has to be stopped on this side.
+  @try {
+    [self emitOnSystemEvent:payload];
+  } @catch (NSException *exception) {
+    // Deliberately not routed back through the SDK logger: that would re-enter this method.
+    RCTLogWarn(@"[AmplyReactNative] Dropped a log entry: %@", exception.reason);
+  }
 }
 
 - (std::shared_ptr<TurboModule>)getTurboModule:(const ObjCTurboModule::InitParams &)params

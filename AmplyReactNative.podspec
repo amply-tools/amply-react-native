@@ -22,7 +22,7 @@ Pod::Spec.new do |s|
   s.dependency 'React-RCTFabric'
 
   # Amply KMP SDK from CocoaPods
-  s.dependency 'AmplySDK', '~> 0.7.0'
+  s.dependency 'AmplySDK', '~> 0.8.0'
 
   s.libraries = 'c++'
   s.pod_target_xcconfig = {
