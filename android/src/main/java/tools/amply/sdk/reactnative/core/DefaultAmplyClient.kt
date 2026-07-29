@@ -37,6 +37,7 @@ import tools.amply.sdk.config.amplyConfig
 import tools.amply.sdk.core.AmplySDKInterface
 import tools.amply.sdk.events.EventInterface
 import tools.amply.sdk.events.SystemEventsListener
+import tools.amply.sdk.core.ListenerToken
 import tools.amply.sdk.logging.LogEntry
 import tools.amply.sdk.logging.LogListener
 
@@ -60,6 +61,16 @@ class DefaultAmplyClient(
   private val lastResumedActivity = AtomicReference<WeakReference<Activity>?>(null)
   private val sessionPrimed = AtomicBoolean(false)
   private val mainHandler = Handler(Looper.getMainLooper())
+
+  // The tokens the SDK hands back at registration. These are the ONLY things that can withdraw
+  // each seam. shutdown() used to withdraw NOTHING at all: the log and system-event slots
+  // happened to be overwritten by the next initialize(), but the deeplink list is append-only, so
+  // it grew by one dead listener per reload for the life of the process and every deeplink was
+  // fanned out to all of them. Gates had no withdrawal in the SDK to call.
+  private val logListenerToken = AtomicReference<ListenerToken?>(null)
+  private val systemEventsToken = AtomicReference<ListenerToken?>(null)
+  private val deepLinkToken = AtomicReference<ListenerToken?>(null)
+  private val gateTokens = java.util.concurrent.CopyOnWriteArrayList<ListenerToken>()
 
   private val _deepLinkEvents = MutableSharedFlow<DeepLinkPayload>(
     replay = 1,
@@ -94,13 +105,13 @@ class DefaultAmplyClient(
           "Initializing Amply with appId=${options.appId} apiKeyPublic=${options.apiKeyPublic.takeIf { it.isNotEmpty() } ?: "<empty>"}"
         )
 
-        // Set log level and listener BEFORE creating instance so initialization logs are captured
+        // The LISTENER goes in before the LEVEL. Logger.setLevel emits a log entry
+        // synchronously, so setting the level first hands that entry to whatever listener the
+        // process had before — on a reload, the client of the host that is going away.
         val effectiveLogLevel = options.getEffectiveLogLevel()
-        tools.amply.sdk.logging.Logger.setLevel(effectiveLogLevel.toString())
-        android.util.Log.i("AmplyReactNative", "Pre-init log level set to: $effectiveLogLevel")
 
         // Set up log listener to forward logs to JS
-        tools.amply.sdk.logging.Logger.setListener(object : LogListener {
+        logListenerToken.set(tools.amply.sdk.logging.Logger.setListener(object : LogListener {
           override fun onLog(entry: LogEntry) {
             val envelope = EventEnvelope(
               id = null,
@@ -116,7 +127,10 @@ class DefaultAmplyClient(
             )
             _logEvents.tryEmit(envelope)
           }
-        })
+        }))
+
+        tools.amply.sdk.logging.Logger.setLevel(effectiveLogLevel.toString())
+        android.util.Log.i("AmplyReactNative", "Pre-init log level set to: $effectiveLogLevel")
 
         val instance = withContext(Dispatchers.Default) {
           Amply(config, application)
@@ -204,11 +218,13 @@ class DefaultAmplyClient(
     // gets its OWN presenter instance owning its OWN "current presentation" slot, so a
     // dismiss() delivered to this gate's presenter can only abandon THIS gate's live
     // presentation — never one belonging to a different url-pattern's gate.
-    instance.registerGate(
-      baseUrl = baseUrl,
-      presenter = GatePresenter(baseUrl),
-      onAbort = policy,
-      timeoutMs = if (timeoutMs > 0L) timeoutMs else DEFAULT_GATE_TIMEOUT_MS,
+    gateTokens.add(
+      instance.registerGate(
+        baseUrl = baseUrl,
+        presenter = GatePresenter(baseUrl),
+        onAbort = policy,
+        timeoutMs = if (timeoutMs > 0L) timeoutMs else DEFAULT_GATE_TIMEOUT_MS,
+      )
     )
   }
 
@@ -289,7 +305,7 @@ class DefaultAmplyClient(
     }
     android.util.Log.i("AmplyReactNative", "Registering deep link listener")
 
-    instance.registerDeepLinkListener(object : DeepLinkListener {
+    deepLinkToken.set(instance.registerDeepLinkListener(object : DeepLinkListener {
       override fun onDeepLink(url: String, info: Map<String, Any>): Boolean {
         android.util.Log.i(
           "AmplyReactNative",
@@ -309,7 +325,7 @@ class DefaultAmplyClient(
         }
         return false
       }
-    })
+    }))
   }
 
   override fun registerSystemEventListener() {
@@ -407,6 +423,25 @@ class DefaultAmplyClient(
   }
 
   override fun shutdown() {
+    // Withdraw every seam FIRST, while the instance is still reachable.
+    //
+    // This used to withdraw nothing at all. The log and system-event slots happened to be
+    // overwritten by the next initialize(), which hid the omission; the deeplink list is
+    // append-only, so it grew by one dead listener per reload for the life of the process and
+    // every deeplink was fanned out to all of them. Gates had no withdrawal in the SDK to call,
+    // so a gate registered by a host that went away parked the next gated call on that URL for
+    // the whole fail-open timeout.
+    //
+    // Ordered before `amplyInstance = null` because three of the four withdrawals go through it.
+    val instance = amplyInstance
+    logListenerToken.getAndSet(null)?.let { tools.amply.sdk.logging.Logger.clearListener(it) }
+    if (instance != null) {
+      systemEventsToken.getAndSet(null)?.let { instance.clearSystemEventsListener(it) }
+      deepLinkToken.getAndSet(null)?.let { instance.removeDeepLinkListener(it) }
+      gateTokens.forEach { instance.unregisterGate(it) }
+    }
+    gateTokens.clear()
+
     runBlocking {
       mutex.withLock {
         amplyInstance = null
@@ -513,7 +548,7 @@ class DefaultAmplyClient(
       )
       return
     }
-    instance.setSystemEventsListener(object : SystemEventsListener {
+    systemEventsToken.set(instance.setSystemEventsListener(object : SystemEventsListener {
       override fun onEvent(event: EventInterface) {
         android.util.Log.i(
           "AmplyReactNative",
@@ -527,7 +562,7 @@ class DefaultAmplyClient(
           )
         }
       }
-    })
+    }))
   }
 
   private fun maybePrimeSessionTracker() {

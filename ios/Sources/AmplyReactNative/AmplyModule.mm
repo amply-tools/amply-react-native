@@ -1,5 +1,6 @@
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
+#import <os/lock.h>
 #import <React/RCTBridgeModule.h>
 #import <React/RCTConvert.h>
 // Not pulled in by RCTBridgeModule.h — the module conforms to RCTInvalidating so it can withdraw
@@ -75,6 +76,15 @@ static ASDKCampaignResult* AmplyCampaignResultFromString(NSString *result) {
 @property (nonatomic, assign) BOOL systemEventsListenerRegistered;
 @property (nonatomic, assign) BOOL lifecycleObserversRegistered;
 @property (nonatomic, assign) BOOL logListenerRegistered;
+// The tokens the SDK handed us at registration. These are the ONLY things that can withdraw
+// each seam: the SDK compares the token, not the listener object, because an ObjC object is
+// adapted afresh on every crossing into Kotlin and so its identity does not survive the trip.
+// Dropping one of these on the floor compiles cleanly and silently makes that seam
+// un-withdrawable, which is what scripts/check-seam-tokens.sh exists to catch.
+@property (nonatomic, strong) ASDKListenerToken *logListenerToken;
+@property (nonatomic, strong) ASDKListenerToken *systemEventsListenerToken;
+@property (nonatomic, strong) ASDKListenerToken *deepLinkListenerToken;
+@property (nonatomic, strong) NSMutableArray<ASDKListenerToken *> *gateTokens;
 @property (nonatomic, assign) AmplyLogLevel currentLogLevel;
 @property (nonatomic, strong) NSMutableArray<void (^)(ASDKAmply *)> *pendingPropertyOps;
 // Global routing table: mediationId -> the KMP CampaignResolution token awaiting a JS reply.
@@ -115,9 +125,30 @@ static ASDKCampaignResult* AmplyCampaignResultFromString(NSString *result) {
 @property (nonatomic, copy) NSString *activeMediationId;
 @end
 
-@implementation Amply
+@implementation Amply {
+  // Held across every emit into the JS bridge, and taken by -invalidate.
+  //
+  // Withdrawal alone is not enough. It is a STORE: it stops the SDK acquiring this module for
+  // any FUTURE callback, but a Kotlin coroutine thread may already be past its own load and
+  // inside onLog/onEvent/onDeepLink right now. RN destroys the JSI object as soon as
+  // -invalidate returns, and the emitter callback captured `this` by reference, so a call still
+  // in flight then writes through a dangling pointer. Taking this lock in -invalidate IS the
+  // join: on return, no emit is running and none can start.
+  os_unfair_lock _emitLock;
+  BOOL _withdrawn;
+}
 
 RCT_EXPORT_MODULE()
+
+- (instancetype)init
+{
+  if (self = [super init]) {
+    _emitLock = OS_UNFAIR_LOCK_INIT;
+    _withdrawn = NO;
+    _gateTokens = [NSMutableArray new];
+  }
+  return self;
+}
 
 - (void)initialize:(JS::NativeAmplyModule::AmplyInitializationConfig &)config
            resolve:(RCTPromiseResolveBlock)resolve
@@ -204,15 +235,19 @@ RCT_EXPORT_MODULE()
     // Set log level and listener BEFORE creating Amply instance
     // so initialization logs are captured and forwarded to JS
     if (self.currentLogLevel != AmplyLogLevelNone) {
-      RCTLogInfo(@"[AmplyReactNative] Setting log level to: %@ BEFORE instance creation", AmplyLogLevelToString(self.currentLogLevel));
-      [[ASDKLogger shared] setLevelLevel:AmplyLogLevelToString(self.currentLogLevel)];
-
-      // Set log listener to forward logs to JS
+      // Registration comes FIRST. Logger.setLevel emits a log entry synchronously, so setting the
+      // level before installing ourselves hands that entry to whatever listener the process had
+      // before — on a reload, the module of the host that is going away. That is not the cause of
+      // the crash this change fixes (a stale registration was reachable regardless), but it is
+      // what made it reproduce on every single reload, and there is no reason to keep the inversion.
       if (!self.logListenerRegistered) {
-        [[ASDKLogger shared] setListenerListener:self];
+        self.logListenerToken = [[ASDKLogger shared] setListenerListener:self];
         self.logListenerRegistered = YES;
         RCTLogInfo(@"[AmplyReactNative] Log listener registered");
       }
+
+      RCTLogInfo(@"[AmplyReactNative] Setting log level to: %@ BEFORE instance creation", AmplyLogLevelToString(self.currentLogLevel));
+      [[ASDKLogger shared] setLevelLevel:AmplyLogLevelToString(self.currentLogLevel)];
     }
 
     // Create Amply instance (this triggers initialization and config fetch)
@@ -422,8 +457,19 @@ static NSDictionary *AmplyGateDecisionToMap(ASDKGateDecision *decision) {
 /** Surfaces a gate present dispatch to JS. Emitter delivery is async; hop to main to match deeplink. */
 - (void)emitGatePresent:(NSDictionary *)payload
 {
+  // The withdrawn check is INSIDE the block on purpose. This hop is asynchronous, so the block
+  // runs after -invalidate may already have returned and RN may already have destroyed the JSI
+  // object — a check at the enqueue site would pass and then emit into freed memory. Weak self
+  // for the same reason: nothing guarantees the module outlives the hop once the SDK has let go.
+  __weak __typeof(self) weakSelf = self;
   dispatch_async(dispatch_get_main_queue(), ^{
-    [self emitOnCampaignPresent:payload];
+    __typeof(self) strongSelf = weakSelf;
+    if (!strongSelf) return;
+    os_unfair_lock_lock(&strongSelf->_emitLock);
+    if (!strongSelf->_withdrawn) {
+      [strongSelf emitOnCampaignPresent:payload];
+    }
+    os_unfair_lock_unlock(&strongSelf->_emitLock);
   });
 }
 
@@ -486,10 +532,14 @@ static NSDictionary *AmplyGateDecisionToMap(ASDKGateDecision *decision) {
   [self.gatePresenters addObject:presenter];
 
   RCTLogInfo(@"[AmplyReactNative] Registering gate baseUrl=%@ onAbort=%@ timeoutMs=%f", baseUrl, onAbort, timeoutMs);
-  [self.amplyInstance registerGateBaseUrl:baseUrl
-                                presenter:presenter
-                                  onAbort:policy
-                                timeoutMs:(int64_t)timeoutMs];
+  ASDKListenerToken *gateToken = [self.amplyInstance registerGateBaseUrl:baseUrl
+                                                              presenter:presenter
+                                                                onAbort:policy
+                                                              timeoutMs:(int64_t)timeoutMs];
+  // Kept so -invalidate can withdraw it. Without this the gate outlives its host: the registry
+  // is process-scoped, so the next gated call on this URL would reach a presenter whose module
+  // is gone, resolve nothing, and park the caller for the whole fail-open timeout.
+  [self.gateTokens addObject:gateToken];
   self.gateRegistered = YES;
 }
 
@@ -715,7 +765,7 @@ static ASDKDataSetType *AmplyDataSetTypeFromDictionary(NSDictionary *type, NSStr
   }
 
   RCTLogInfo(@"[AmplyReactNative] Registering deep link listener");
-  [self.amplyInstance registerDeepLinkListenerListener:self];
+  self.deepLinkListenerToken = [self.amplyInstance registerDeepLinkListenerListener:self];
   self.deepLinkListenerRegistered = YES;
 }
 
@@ -747,7 +797,11 @@ static ASDKDataSetType *AmplyDataSetTypeFromDictionary(NSDictionary *type, NSStr
     @"consumed": @NO
   };
 
-  [self emitOnDeepLink:payload];
+  os_unfair_lock_lock(&_emitLock);
+  if (!_withdrawn) {
+    [self emitOnDeepLink:payload];
+  }
+  os_unfair_lock_unlock(&_emitLock);
 
   // For custom scheme URLs (e.g., amply://), let JS handle navigation via the event above.
   // For external URLs (http/https), open via system.
@@ -879,14 +933,15 @@ static ASDKDataSetType *AmplyDataSetTypeFromDictionary(NSDictionary *type, NSStr
 {
   self.currentLogLevel = AmplyLogLevelFromString(level);
   RCTLogInfo(@"[AmplyReactNative] Log level set to: %@", level);
-  [[ASDKLogger shared] setLevelLevel:level];
 
-  // Register log listener if not already registered and level is not none
+  // Register BEFORE setting the level, for the reason spelled out in -initialize:.
   if (self.currentLogLevel != AmplyLogLevelNone && !self.logListenerRegistered) {
-    [[ASDKLogger shared] setListenerListener:self];
+    self.logListenerToken = [[ASDKLogger shared] setListenerListener:self];
     self.logListenerRegistered = YES;
     RCTLogInfo(@"[AmplyReactNative] Log listener registered via setLogLevel");
   }
+
+  [[ASDKLogger shared] setLevelLevel:level];
 }
 
 - (NSString *)getLogLevel
@@ -904,7 +959,7 @@ static ASDKDataSetType *AmplyDataSetTypeFromDictionary(NSDictionary *type, NSStr
   if (!self.amplyInstance) {
     return;
   }
-  [self.amplyInstance setSystemEventsListenerListener:self];
+  self.systemEventsListenerToken = [self.amplyInstance setSystemEventsListenerListener:self];
   self.systemEventsListenerRegistered = YES;
   RCTLogInfo(@"[AmplyReactNative] System events listener registered");
 }
@@ -964,35 +1019,69 @@ static ASDKDataSetType *AmplyDataSetTypeFromDictionary(NSDictionary *type, NSStr
 {
   // The bridge is going away, and with it the JS emitter every callback below writes into. The
   // SDK, however, is process-scoped and keeps running — its background coroutines (the events
-  // ticker, the campaign loader) go on logging. If we are still installed as the log listener at
-  // that point, each of those calls reaches a module whose emitter is dead, and the exception
-  // that raises crosses back into Kotlin/Native, which terminates the process rather than
-  // unwinding. That is the "crashes about every other launch" on a JS reload.
+  // ticker, the campaign loader) go on logging. If we are still installed at that point, each of
+  // those calls reaches a module whose emitter has been destroyed, and the fault is a memory
+  // access, not an exception: no @try and no Kotlin try can intercept it.
   //
-  // clearListener COMPARES before clearing, so a replacement module that has already installed
-  // itself is not silenced by this one's teardown.
-  [[ASDKLogger shared] clearListenerListener:self];
+  // Withdrawal is by TOKEN. It used to pass `self`, and that never matched: an ObjC object is
+  // adapted afresh on every crossing into Kotlin, so the SDK's identity compare found nothing to
+  // remove and the withdrawal silently did nothing at all. Measured, not deduced — the retain
+  // count did not fall across the call.
+  if (self.logListenerToken) {
+    [[ASDKLogger shared] clearListenerToken:self.logListenerToken];
+    self.logListenerToken = nil;
+  }
 
-  // All three seams, not just the logger. The deeplink registration APPENDS, so leaving it behind
-  // does not merely leak this module — every reload adds another dead listener and each future
-  // deeplink is fanned out to all of them.
-  [self.amplyInstance clearSystemEventsListenerListener:self];
-  [self.amplyInstance removeDeepLinkListenerListener:self];
+  // Every seam, not just the logger. The deeplink registration APPENDS, so leaving it behind does
+  // not merely leak this module — every reload adds another dead listener and each future deeplink
+  // is fanned out to all of them.
+  if (self.systemEventsListenerToken) {
+    [self.amplyInstance clearSystemEventsListenerToken:self.systemEventsListenerToken];
+    self.systemEventsListenerToken = nil;
+  }
+  if (self.deepLinkListenerToken) {
+    [self.amplyInstance removeDeepLinkListenerToken:self.deepLinkListenerToken];
+    self.deepLinkListenerToken = nil;
+  }
+
+  // Gates too, which had no withdrawal at all before. The registry is process-scoped: a gate left
+  // registered by a module that is going away parks the next gated call on that URL for the whole
+  // fail-open timeout, silently.
+  for (ASDKListenerToken *gateToken in self.gateTokens) {
+    [self.amplyInstance unregisterGateToken:gateToken];
+  }
+  [self.gateTokens removeAllObjects];
 
   [[NSNotificationCenter defaultCenter] removeObserver:self];
   self.logListenerRegistered = NO;
   self.deepLinkListenerRegistered = NO;
+  self.systemEventsListenerRegistered = NO;
+  self.gateRegistered = NO;
+
+  // Settle anything a gate left in flight, HERE rather than in -dealloc. -dealloc could not do
+  // this job: the SDK held this module strongly precisely because withdrawal never worked, so it
+  // never ran. Android has always settled from its own invalidate path; this brings iOS level.
+  [self settlePendingCompletionsFailingOpen];
+
+  // THE JOIN, and it must come last. Everything above is a store — it stops the SDK acquiring
+  // this module for anything new. It cannot stop a Kotlin coroutine thread that is already past
+  // its own load and inside an emit right now. Taking the lock waits for that call to finish;
+  // setting the flag under it stops any later one from starting. RN destroys the JSI object as
+  // soon as this method returns, so without this there is still a window where a call in flight
+  // writes through the emitter's dangling captured pointer.
+  os_unfair_lock_lock(&_emitLock);
+  _withdrawn = YES;
+  os_unfair_lock_unlock(&_emitLock);
 }
 
-- (void)dealloc
+/**
+ * Fails open every gate presentation still awaiting a JS reply, so no caller is left hanging.
+ *
+ * Idempotent: pendingCompletions is emptied under @synchronized, so the second pass from -dealloc
+ * finds nothing to do.
+ */
+- (void)settlePendingCompletionsFailingOpen
 {
-  // Belt and braces. In practice this rarely runs while the SDK holds us — see -invalidate.
-  [[ASDKLogger shared] clearListenerListener:self];
-  [[NSNotificationCenter defaultCenter] removeObserver:self];
-
-  // Fail open any in-flight gate presentations so no caller is left hanging. Each per-gate
-  // presenter clears its own current-presentation slot when its token is taken below; on dealloc
-  // the presenters themselves are released with the module.
   NSArray<id<ASDKCampaignResolution>> *inFlight = nil;
   @synchronized (self) {
     inFlight = self.pendingCompletions.allValues;
@@ -1005,6 +1094,17 @@ static ASDKDataSetType *AmplyDataSetTypeFromDictionary(NSDictionary *type, NSStr
       // Best-effort cleanup during teardown.
     }
   }
+}
+
+- (void)dealloc
+{
+  // Belt and braces. Unlike before, this CAN now run: once the token withdrawal above actually
+  // removes us, the SDK stops holding this module and it is released on schedule.
+  if (self.logListenerToken) {
+    [[ASDKLogger shared] clearListenerToken:self.logListenerToken];
+  }
+  [[NSNotificationCenter defaultCenter] removeObserver:self];
+  [self settlePendingCompletionsFailingOpen];
 }
 
 #pragma mark - ASDKSystemEventsListener
@@ -1023,11 +1123,15 @@ static ASDKDataSetType *AmplyDataSetTypeFromDictionary(NSDictionary *type, NSStr
   // Same boundary, same hazard as -onLogEntry:. The system-events channel is also called from
   // Kotlin background coroutines and also writes into the JS emitter, so it can outlive the
   // bridge in exactly the same way. Guarded here rather than waiting for the second crash report.
-  @try {
-    [self emitOnSystemEvent:payload];
-  } @catch (NSException *exception) {
-    RCTLogWarn(@"[AmplyReactNative] Dropped a system event: %@", exception.reason);
+  os_unfair_lock_lock(&_emitLock);
+  if (!_withdrawn) {
+    @try {
+      [self emitOnSystemEvent:payload];
+    } @catch (NSException *exception) {
+      RCTLogWarn(@"[AmplyReactNative] Dropped a system event: %@", exception.reason);
+    }
   }
+  os_unfair_lock_unlock(&_emitLock);
 }
 
 #pragma mark - ASDKLogListener
@@ -1064,12 +1168,16 @@ static ASDKDataSetType *AmplyDataSetTypeFromDictionary(NSDictionary *type, NSStr
   // here does not unwind back into Kotlin — the runtime's terminate handler kills the process,
   // which is why a dead JS emitter shows up as std::terminate with no app frame in the stack.
   // A Kotlin-side try/catch cannot catch this; it has to be stopped on this side.
-  @try {
-    [self emitOnSystemEvent:payload];
-  } @catch (NSException *exception) {
-    // Deliberately not routed back through the SDK logger: that would re-enter this method.
-    RCTLogWarn(@"[AmplyReactNative] Dropped a log entry: %@", exception.reason);
+  os_unfair_lock_lock(&_emitLock);
+  if (!_withdrawn) {
+    @try {
+      [self emitOnSystemEvent:payload];
+    } @catch (NSException *exception) {
+      // Deliberately not routed back through the SDK logger: that would re-enter this method.
+      RCTLogWarn(@"[AmplyReactNative] Dropped a log entry: %@", exception.reason);
+    }
   }
+  os_unfair_lock_unlock(&_emitLock);
 }
 
 - (std::shared_ptr<TurboModule>)getTurboModule:(const ObjCTurboModule::InitParams &)params
