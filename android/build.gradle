@@ -15,7 +15,7 @@ buildscript {
 apply plugin: 'com.android.library'
 apply plugin: 'org.jetbrains.kotlin.android'
 
-def amplySdkVersion = project.findProperty('amplySdkVersion') ?: System.getenv('AMPLY_SDK_VERSION') ?: '0.9.0'
+def amplySdkVersion = project.findProperty('amplySdkVersion') ?: System.getenv('AMPLY_SDK_VERSION') ?: '0.9.1'
 group = 'tools.amply'
 version = amplySdkVersion
 
