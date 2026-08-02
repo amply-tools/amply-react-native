@@ -70,7 +70,9 @@ class DefaultAmplyClient(
   private val logListenerToken = AtomicReference<ListenerToken?>(null)
   private val systemEventsToken = AtomicReference<ListenerToken?>(null)
   private val deepLinkToken = AtomicReference<ListenerToken?>(null)
-  private val gateTokens = java.util.concurrent.CopyOnWriteArrayList<ListenerToken>()
+  // Keyed by baseUrl: withdrawal names a URL, not a token, and at most one gate per URL may
+  // be registered — the JS side evicts before it registers again.
+  private val gateTokensByBaseUrl = java.util.concurrent.ConcurrentHashMap<String, ListenerToken>()
 
   private val _deepLinkEvents = MutableSharedFlow<DeepLinkPayload>(
     replay = 1,
@@ -218,14 +220,36 @@ class DefaultAmplyClient(
     // gets its OWN presenter instance owning its OWN "current presentation" slot, so a
     // dismiss() delivered to this gate's presenter can only abandon THIS gate's live
     // presentation — never one belonging to a different url-pattern's gate.
-    gateTokens.add(
+    // Defensive: JS evicts before registering again, but overwriting the map entry without
+    // withdrawing would leak the previous token for the life of the process.
+    unregisterGate(baseUrl)
+
+    gateTokensByBaseUrl[baseUrl] =
       instance.registerGate(
         baseUrl = baseUrl,
         presenter = GatePresenter(baseUrl),
         onAbort = policy,
         timeoutMs = if (timeoutMs > 0L) timeoutMs else DEFAULT_GATE_TIMEOUT_MS,
       )
-    )
+  }
+
+  /**
+   * Withdraws the gate registered for [baseUrl]. A no-op when none is registered, so JS can
+   * call it without checking first.
+   *
+   * By URL rather than by token because the token never crosses the bridge. It has to exist
+   * at all because a gate outliving its presenter is invisible: the next gated call on that
+   * URL parks for the whole fail-open timeout with no crash and nothing in the log.
+   */
+  override fun unregisterGate(baseUrl: String) {
+    val token = gateTokensByBaseUrl.remove(baseUrl) ?: return
+    // The instance can already be gone if the bridge was torn down between register and
+    // withdraw; dropping our own bookkeeping above is still correct in that case.
+    amplyInstance?.unregisterGate(token)
+    android.util.Log.i("AmplyReactNative", "Unregistered gate baseUrl=$baseUrl")
+    if (gateTokensByBaseUrl.isEmpty()) {
+      gatePresenterRegistered.set(false)
+    }
   }
 
   override fun resolveCampaign(mediationId: String, result: String) {
@@ -438,9 +462,9 @@ class DefaultAmplyClient(
     if (instance != null) {
       systemEventsToken.getAndSet(null)?.let { instance.clearSystemEventsListener(it) }
       deepLinkToken.getAndSet(null)?.let { instance.removeDeepLinkListener(it) }
-      gateTokens.forEach { instance.unregisterGate(it) }
+      gateTokensByBaseUrl.values.forEach { instance.unregisterGate(it) }
     }
-    gateTokens.clear()
+    gateTokensByBaseUrl.clear()
 
     runBlocking {
       mutex.withLock {

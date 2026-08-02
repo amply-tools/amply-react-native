@@ -18,9 +18,100 @@ import type {
 
 let deepLinkRegistered = false;
 let debugLogListenerRegistered = false;
-const registeredGates = new Set<string>();
 const deepLinkSubscriptions = new Set<() => void>();
 const campaignPresenterSubscriptions = new Set<() => void>();
+
+/**
+ * What is registered NATIVELY, keyed by gate baseUrl — at most one entry per URL, because a
+ * second `registerGate` on the same URL evicts the first rather than stacking on top of it.
+ *
+ * This used to be a `Set<string>` written the moment a native call was made, whether or not
+ * that call did anything. Three defects came out of that one optimistic write: two presenters
+ * both showing a single presentation, a withdrawal that left the native gate live, and a
+ * registration made before `initialize` being lost for the lifetime of the process.
+ */
+const gateRegistrations = new Map<string, {id: number; removeSubscription: () => void}>();
+
+/**
+ * Identity for a gate registration. Withdrawal cannot be keyed by URL alone: an unsubscribe
+ * handed out for a registration that has since been evicted would otherwise withdraw whatever
+ * holds that URL now, killing its replacement. A stale handle must be inert.
+ */
+let nextGateRegistrationId = 1;
+
+/**
+ * Registrations made before the SDK was up. The native side refuses those with a log line and
+ * no return value, so JS cannot tell refusal from success — it asks `isInitialized()` first and
+ * parks the work here instead, to be replayed by [initialize].
+ */
+type PendingRegistration = {cancelled: boolean; apply: () => void};
+const pendingRegistrations: PendingRegistration[] = [];
+
+/** True when the native module exists AND the SDK behind it has been initialised. */
+function isSdkUp(): boolean {
+  try {
+    return getNativeModule().isInitialized();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Runs [apply] now if the SDK is up, otherwise parks it until [initialize] completes.
+ * Returns a canceller so a caller that withdraws before initialisation is never replayed.
+ */
+function applyWhenSdkIsUp(apply: () => void): () => void {
+  if (isSdkUp()) {
+    apply();
+    return () => {};
+  }
+  const pending: PendingRegistration = {
+    cancelled: false,
+    apply: () => {
+      if (!pending.cancelled) {
+        apply();
+      }
+    },
+  };
+  pendingRegistrations.push(pending);
+  return () => {
+    pending.cancelled = true;
+  };
+}
+
+function replayPendingRegistrations(): void {
+  const queued = pendingRegistrations.splice(0, pendingRegistrations.length);
+  queued.forEach(pending => {
+    try {
+      pending.apply();
+    } catch (error) {
+      console.warn('[Amply] Failed to apply a registration deferred until initialize', error);
+    }
+  });
+}
+
+/**
+ * Withdraws the gate registered for [baseUrl], on both sides. A no-op when nothing is
+ * registered, so callers do not need to check first.
+ */
+function withdrawGate(baseUrl: string, onlyIfId?: number): void {
+  const registration = gateRegistrations.get(baseUrl);
+  if (!registration) {
+    return;
+  }
+  // Compare before clearing, the same rule the SDK's own listener seams follow: a caller
+  // holding a stale handle must not withdraw the registration that replaced it.
+  if (onlyIfId !== undefined && registration.id !== onlyIfId) {
+    return;
+  }
+  gateRegistrations.delete(baseUrl);
+  registration.removeSubscription();
+  try {
+    getNativeModule().unregisterGate(baseUrl);
+  } catch (error) {
+    console.warn('[Amply] Failed to unregister gate', baseUrl, error);
+  }
+}
 
 /**
  * Format a debug log entry for console output using new format.
@@ -72,12 +163,15 @@ function ensureDebugLogListener(): void {
 }
 
 async function ensureDeepLinkRegistration(): Promise<void> {
-  if (!deepLinkRegistered) {
-    console.log('[Amply] Calling registerDeepLinkListener on native module');
+  if (deepLinkRegistered) {
+    return;
+  }
+  // The flag is set inside apply(), not here: native refuses while the SDK is down, and
+  // recording that refusal as success is what stranded the listener for the whole process.
+  applyWhenSdkIsUp(() => {
     getNativeModule().registerDeepLinkListener();
     deepLinkRegistered = true;
-    console.log('[Amply] registerDeepLinkListener completed');
-  }
+  });
 }
 
 function trackDeepLinkSubscription(subscription?: {remove?: () => void}): () => void {
@@ -100,6 +194,8 @@ export async function initialize(config: AmplyInitializationConfig): Promise<voi
     ensureDebugLogListener();
   }
   await getNativeModule().initialize(config);
+  // Anything the host registered before this point was parked rather than lost.
+  replayPendingRegistrations();
 }
 
 /**
@@ -272,7 +368,17 @@ function trackCampaignPresenterSubscription(subscription?: {remove?: () => void}
  * ad lifecycles into the single result you report. A synchronous throw → `unavailable`
  * (fail-open).
  *
- * @returns an unsubscribe function.
+ * One presenter per `baseUrl`: registering the same URL again REPLACES the previous
+ * presenter and re-applies the options, rather than adding a second one. Two presenters on
+ * one URL would both be handed the same presentation, so both would show UI and the outcome
+ * would be decided by whichever reported first.
+ *
+ * Safe to call before {@link initialize} — the registration is held and applied once the SDK
+ * is up. Withdrawing before then cancels it instead.
+ *
+ * @returns an unsubscribe function. It withdraws the NATIVE gate as well as this
+ * subscription; a gate left registered behind a departed presenter parks the next gated call
+ * on that URL for its whole fail-open timeout, silently.
  */
 export async function registerGate(
   baseUrl: string,
@@ -282,48 +388,88 @@ export async function registerGate(
   const onAbort = opts?.onAbort ?? 'cancel';
   const timeoutMs = opts?.timeoutMs ?? 0;
 
-  if (!registeredGates.has(baseUrl)) {
-    getNativeModule().registerGate(baseUrl, onAbort, timeoutMs);
-    registeredGates.add(baseUrl);
-  }
+  const registrationId = nextGateRegistrationId++;
 
-  const nativeModule = getNativeModule();
-  const subscription = nativeModule.onCampaignPresent((event: CampaignPresentEvent) => {
-    const {url, params, info, mediationId} = event;
-    // The native side routes by baseUrl, but guard here too in case multiple gates
-    // share the single onCampaignPresent channel.
-    if (baseUrl && url && !url.startsWith(baseUrl)) {
-      return;
-    }
+  const attach = () => {
+    // Evict at APPLY time, not at call time. Two registrations made before `initialize` are
+    // both only queued, so a call-time eviction would find nothing in the registry to evict —
+    // and both would then attach at replay, the second overwriting the map entry while the
+    // first subscription stayed live. That is the duplicate-presenter defect on another path.
+    withdrawGate(baseUrl);
 
-    let settled = false;
-    const report = (result: CampaignResult) => {
-      if (settled) {
+    const nativeModule = getNativeModule();
+    nativeModule.registerGate(baseUrl, onAbort, timeoutMs);
+
+    let subscription: {remove?: () => void} | undefined;
+    try {
+      subscription = nativeModule.onCampaignPresent((event: CampaignPresentEvent) => {
+      const {url, params, info, mediationId} = event;
+      // The native side routes by baseUrl, but guard here too because every gate shares the
+      // single onCampaignPresent channel.
+      if (baseUrl && url && !url.startsWith(baseUrl)) {
         return;
       }
-      settled = true;
-      nativeModule.resolveCampaign(mediationId, result);
-    };
-    const resolution: GateResolution = {
-      completed: () => report('Completed'),
-      dismissed: () => report('Dismissed'),
-      unavailable: () => report('Unavailable'),
-    };
 
-    try {
-      presenter(
-        (params ?? {}) as Record<string, unknown>,
-        info as Record<string, unknown>,
-        resolution,
-      );
+      let settled = false;
+      const report = (result: CampaignResult) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        nativeModule.resolveCampaign(mediationId, result);
+      };
+      const resolution: GateResolution = {
+        completed: () => report('Completed'),
+        dismissed: () => report('Dismissed'),
+        unavailable: () => report('Unavailable'),
+      };
+
+        try {
+          presenter(
+            (params ?? {}) as Record<string, unknown>,
+            info as Record<string, unknown>,
+            resolution,
+          );
+        } catch (error) {
+          // Presenter failure is an infra failure, never a user dismiss → Unavailable.
+          console.warn('[Amply] gate presenter threw; reporting Unavailable (fail-open)', error);
+          report('Unavailable');
+        }
+      });
     } catch (error) {
-      // Presenter failure is an infra failure, never a user dismiss → Unavailable.
-      console.warn('[Amply] gate presenter threw; reporting Unavailable (fail-open)', error);
-      report('Unavailable');
+      // The native gate is already registered at this point. Leaving it would be the exact
+      // defect this whole change exists to remove — a gate with no presenter behind it — and
+      // nothing would be tracked to withdraw it later, so withdraw it here.
+      console.warn('[Amply] Failed to subscribe a gate presenter; withdrawing the gate', error);
+      try {
+        nativeModule.unregisterGate(baseUrl);
+      } catch (withdrawError) {
+        console.warn('[Amply] Failed to withdraw the gate after a failed subscribe', withdrawError);
+      }
+      throw error;
     }
-  });
 
-  return trackCampaignPresenterSubscription(subscription);
+    gateRegistrations.set(baseUrl, {
+      id: registrationId,
+      removeSubscription: () => subscription?.remove?.(),
+    });
+  };
+
+  const cancelPending = applyWhenSdkIsUp(attach);
+
+  let withdrawn = false;
+  const unsubscribe = () => {
+    if (withdrawn) {
+      return;
+    }
+    withdrawn = true;
+    cancelPending();
+    // Only if THIS registration still holds the URL — see withdrawGate.
+    withdrawGate(baseUrl, registrationId);
+    campaignPresenterSubscriptions.delete(unsubscribe);
+  };
+  campaignPresenterSubscriptions.add(unsubscribe);
+  return unsubscribe;
 }
 
 export async function getRecentEvents(limit: number): Promise<EventRecord[]> {
@@ -414,7 +560,13 @@ export function removeAllListeners(): void {
     }
   });
   campaignPresenterSubscriptions.clear();
-  registeredGates.clear();
+
+  // Each unsubscribe above withdraws its own gate. Anything still here was registered by a
+  // path that did not go through registerGate's tracker; withdraw it too rather than just
+  // forgetting it, which is what the old `registeredGates.clear()` did — leaving JS believing
+  // nothing was registered while the gates were still live natively.
+  Array.from(gateRegistrations.keys()).forEach(withdrawGate);
+  pendingRegistrations.length = 0;
 }
 
 export type {

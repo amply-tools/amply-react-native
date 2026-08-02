@@ -89,6 +89,7 @@ namespace JS {
 - (void)registerGate:(NSString *)baseUrl
              onAbort:(NSString *)onAbort
            timeoutMs:(double)timeoutMs;
+- (void)unregisterGate:(NSString *)baseUrl;
 - (void)getRecentEvents:(double)limit
                 resolve:(RCTPromiseResolveBlock)resolve
                  reject:(RCTPromiseRejectBlock)reject;

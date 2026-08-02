@@ -136,6 +136,12 @@ class AmplyModule(reactContext: ReactApplicationContext) :
     client.registerGate(baseUrl, onAbort, timeoutMs.toLong())
   }
 
+  override fun unregisterGate(baseUrl: String) {
+    // The present-collection job stays: it is per-module, not per-gate, and a later
+    // registerGate on any URL would need it again.
+    client.unregisterGate(baseUrl)
+  }
+
   override fun getRecentEvents(limit: Double, promise: Promise) {
     scope.launch {
       try {

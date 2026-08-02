@@ -11,6 +11,8 @@ import {
   View,
 } from 'react-native';
 import {useAmplyDemo} from '../hooks/useAmplyDemo';
+import {useAmplyGateDemo} from '../hooks/useAmplyGateDemo';
+import {FakeAdOverlay} from '../components/FakeAdOverlay';
 import {formatTimestamp} from '../utils/formatTimestamp';
 
 export function HomeScreen(): React.JSX.Element {
@@ -36,9 +38,22 @@ export function HomeScreen(): React.JSX.Element {
     deepLinkUpdatedAt,
   } = useAmplyDemo();
 
+  const {
+    pendingAd,
+    reportAdOutcome,
+    coins,
+    level,
+    gateLog,
+    finishLevel,
+    claimBonus,
+    previewAdUi,
+    withdrawGates,
+  } = useAmplyGateDemo(initialized);
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="dark-content" />
+      <FakeAdOverlay request={pendingAd} onOutcome={reportAdOutcome} />
       <ScrollView contentInsetAdjustmentBehavior="automatic">
         <View style={styles.section}>
           <View style={styles.headerRow}>
@@ -108,6 +123,67 @@ export function HomeScreen(): React.JSX.Element {
               </Pressable>
             </View>
           </View>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.heading}>Gated actions (ads)</Text>
+          <Text style={styles.gateExplainer}>
+            Amply decides whether an ad plays; this app plays it and reports back. Without an
+            active campaign carrying a gate action, both buttons proceed immediately — that is
+            the fail-open path, not a failure.
+          </Text>
+
+          <View style={styles.gateStatsRow}>
+            <Text style={styles.gateStat}>Level {level}</Text>
+            <Text style={styles.gateStat}>{coins} coins</Text>
+          </View>
+
+          <View style={styles.buttonsColumn}>
+            <View style={styles.buttonWrapper}>
+              <Pressable
+                style={[styles.primaryButton, !initialized && styles.primaryButtonDisabled]}
+                onPress={finishLevel}
+                disabled={!initialized}>
+                <Text style={styles.primaryButtonText}>
+                  Finish level · interstitial, dismiss still proceeds
+                </Text>
+              </Pressable>
+            </View>
+            <View style={styles.buttonWrapper}>
+              <Pressable
+                style={[styles.primaryButton, !initialized && styles.primaryButtonDisabled]}
+                onPress={claimBonus}
+                disabled={!initialized}>
+                <Text style={styles.primaryButtonText}>
+                  Claim bonus · rewarded, dismiss cancels
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+
+          <View style={styles.actionsRow}>
+            <Pressable
+              style={styles.secondaryButton}
+              onPress={() => previewAdUi('interstitial')}>
+              <Text style={styles.secondaryButtonText}>Preview interstitial UI</Text>
+            </Pressable>
+            <Pressable style={styles.secondaryButton} onPress={() => previewAdUi('rewarded')}>
+              <Text style={styles.secondaryButtonText}>Preview rewarded UI</Text>
+            </Pressable>
+            <Pressable style={styles.secondaryButton} onPress={withdrawGates}>
+              <Text style={styles.secondaryButtonText}>Withdraw gates</Text>
+            </Pressable>
+          </View>
+          <Text style={styles.gateExplainer}>
+            The two previews drive the ad UI directly, without the SDK. They prove the overlay
+            works; they prove nothing about the gate.
+          </Text>
+
+          {gateLog.map(entry => (
+            <Text key={entry.id} style={styles.logEntry}>
+              {formatTimestamp(entry.at)} · {entry.line}
+            </Text>
+          ))}
         </View>
 
         <View style={styles.section}>
@@ -249,6 +325,22 @@ const styles = StyleSheet.create({
     fontFamily: 'Courier',
     fontSize: 13,
     color: '#222',
+  },
+  gateExplainer: {
+    color: '#5b6270',
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 12,
+  },
+  gateStatsRow: {
+    flexDirection: 'row',
+    gap: 16,
+    marginBottom: 12,
+  },
+  gateStat: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#1f2430',
   },
   logEntry: {
     fontSize: 13,

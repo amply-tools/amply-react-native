@@ -49,6 +49,14 @@ interface AmplyClient {
   fun registerGate(baseUrl: String, onAbort: String, timeoutMs: Long)
 
   /**
+   * Withdraw the gate registered for [baseUrl]. A no-op when none is registered.
+   *
+   * Without it a gate outlives its presenter: the registry is process-scoped, so the next
+   * gated call on that URL parks for the whole fail-open timeout, silently.
+   */
+  fun unregisterGate(baseUrl: String)
+
+  /**
    * Report the terminal result (one of `Completed` / `Dismissed` / `Unavailable`) for
    * a previously dispatched campaign present. Idempotent — late/duplicate or unknown
    * `mediationId`s are ignored.

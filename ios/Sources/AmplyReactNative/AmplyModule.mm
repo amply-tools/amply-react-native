@@ -15,6 +15,10 @@
 
 using namespace facebook::react;
 
+/// Mirrors DefaultAmplyClient.DEFAULT_GATE_TIMEOUT_MS on the Android bridge. Both exist because
+/// the JS layer sends 0 for "unspecified", and 0 is not a usable deadline downstream.
+static const int64_t AmplyDefaultGateTimeoutMs = 30000;
+
 /**
  * Log level enum for SDK debug output.
  */
@@ -84,7 +88,9 @@ static ASDKCampaignResult* AmplyCampaignResultFromString(NSString *result) {
 @property (nonatomic, strong) ASDKListenerToken *logListenerToken;
 @property (nonatomic, strong) ASDKListenerToken *systemEventsListenerToken;
 @property (nonatomic, strong) ASDKListenerToken *deepLinkListenerToken;
-@property (nonatomic, strong) NSMutableArray<ASDKListenerToken *> *gateTokens;
+// Keyed by baseUrl, because withdrawal names a URL rather than a token, and because at most
+// one gate per URL may be registered — the JS side evicts before it registers again.
+@property (nonatomic, strong) NSMutableDictionary<NSString *, ASDKListenerToken *> *gateTokensByBaseUrl;
 @property (nonatomic, assign) AmplyLogLevel currentLogLevel;
 @property (nonatomic, strong) NSMutableArray<void (^)(ASDKAmply *)> *pendingPropertyOps;
 // Global routing table: mediationId -> the KMP CampaignResolution token awaiting a JS reply.
@@ -92,7 +98,9 @@ static ASDKCampaignResult* AmplyCampaignResultFromString(NSString *result) {
 // that lookup is correct regardless of which gate minted the id. Guarded by @synchronized(self).
 @property (nonatomic, strong) NSMutableDictionary<NSString *, id<ASDKCampaignResolution>> *pendingCompletions;
 // Retains the per-gate presenter instances; the KMP gate registry does not keep them alive.
-@property (nonatomic, strong) NSMutableArray<AmplyGatePresenter *> *gatePresenters;
+// Keyed by baseUrl so a withdrawal releases its presenter instead of leaking it for the life
+// of the process.
+@property (nonatomic, strong) NSMutableDictionary<NSString *, AmplyGatePresenter *> *gatePresentersByBaseUrl;
 
 // Internal hooks used by AmplyGatePresenter (one instance per registerGate).
 - (id<ASDKCampaignResolution>)takePendingCompletionForMediationId:(NSString *)mediationId;
@@ -145,7 +153,7 @@ RCT_EXPORT_MODULE()
   if (self = [super init]) {
     _emitLock = OS_UNFAIR_LOCK_INIT;
     _withdrawn = NO;
-    _gateTokens = [NSMutableArray new];
+    _gateTokensByBaseUrl = [NSMutableDictionary new];
   }
   return self;
 }
@@ -517,9 +525,13 @@ static NSDictionary *AmplyGateDecisionToMap(ASDKGateDecision *decision) {
   if (!self.pendingCompletions) {
     self.pendingCompletions = [NSMutableDictionary new];
   }
-  if (!self.gatePresenters) {
-    self.gatePresenters = [NSMutableArray new];
+  if (!self.gatePresentersByBaseUrl) {
+    self.gatePresentersByBaseUrl = [NSMutableDictionary new];
   }
+
+  // Defensive: JS evicts before it registers again, but a stale registration here would
+  // otherwise be overwritten in the map and leak its token, so withdraw it properly first.
+  [self unregisterGate:baseUrl];
 
   ASDKAbortPolicy *policy = [onAbort isEqualToString:@"proceed"]
       ? ASDKAbortPolicy.proceed
@@ -529,18 +541,58 @@ static NSDictionary *AmplyGateDecisionToMap(ASDKGateDecision *decision) {
   presenter.module = self;
   presenter.baseUrl = baseUrl;
   // Retain the presenter — the KMP gate registry does not keep it alive.
-  [self.gatePresenters addObject:presenter];
+  self.gatePresentersByBaseUrl[baseUrl] = presenter;
 
-  RCTLogInfo(@"[AmplyReactNative] Registering gate baseUrl=%@ onAbort=%@ timeoutMs=%f", baseUrl, onAbort, timeoutMs);
+  // JS sends 0 when the caller omits opts.timeoutMs, and 0 does NOT mean "use the default"
+  // downstream — KMP clamps it UP to its 1s minimum. Passing it through gave every RN iOS
+  // integrator a one-second gate: the presenter's result arrived after the deadline and was
+  // discarded, onAbort never applied, and a rewarded ad paid out on a skip. The Android
+  // bridge has always mapped this; iOS did not, so the two platforms silently disagreed.
+  int64_t effectiveTimeoutMs =
+      timeoutMs > 0 ? (int64_t)timeoutMs : AmplyDefaultGateTimeoutMs;
+
+  RCTLogInfo(@"[AmplyReactNative] Registering gate baseUrl=%@ onAbort=%@ timeoutMs=%lld",
+             baseUrl, onAbort, effectiveTimeoutMs);
   ASDKListenerToken *gateToken = [self.amplyInstance registerGateBaseUrl:baseUrl
                                                               presenter:presenter
                                                                 onAbort:policy
-                                                              timeoutMs:(int64_t)timeoutMs];
+                                                              timeoutMs:effectiveTimeoutMs];
   // Kept so -invalidate can withdraw it. Without this the gate outlives its host: the registry
   // is process-scoped, so the next gated call on this URL would reach a presenter whose module
   // is gone, resolve nothing, and park the caller for the whole fail-open timeout.
-  [self.gateTokens addObject:gateToken];
+  self.gateTokensByBaseUrl[baseUrl] = gateToken;
   self.gateRegistered = YES;
+}
+
+/**
+ * Withdraws the gate registered for `baseUrl`, releasing both the KMP registration and the
+ * presenter instance this module was retaining on its behalf. A no-op when nothing is
+ * registered for that URL, so JS can call it without checking first.
+ *
+ * Withdrawal is by URL rather than by token because the token never crosses the bridge — and
+ * it must exist at all because a gate outliving its presenter is invisible: the next gated
+ * call on that URL parks for the whole fail-open timeout with no crash, no error and nothing
+ * in the console.
+ */
+- (void)unregisterGate:(NSString *)baseUrl
+{
+  ASDKListenerToken *gateToken = self.gateTokensByBaseUrl[baseUrl];
+  if (!gateToken) {
+    return;
+  }
+  [self.gateTokensByBaseUrl removeObjectForKey:baseUrl];
+  [self.gatePresentersByBaseUrl removeObjectForKey:baseUrl];
+
+  // The instance can be gone already if the SDK was torn down between register and withdraw;
+  // dropping our own bookkeeping above is still correct in that case.
+  if (self.amplyInstance) {
+    [self.amplyInstance unregisterGateToken:gateToken];
+  }
+  RCTLogInfo(@"[AmplyReactNative] Unregistered gate baseUrl=%@", baseUrl);
+
+  if (self.gateTokensByBaseUrl.count == 0) {
+    self.gateRegistered = NO;
+  }
 }
 
 - (void)getRecentEvents:(double)limit
@@ -1047,10 +1099,11 @@ static ASDKDataSetType *AmplyDataSetTypeFromDictionary(NSDictionary *type, NSStr
   // Gates too, which had no withdrawal at all before. The registry is process-scoped: a gate left
   // registered by a module that is going away parks the next gated call on that URL for the whole
   // fail-open timeout, silently.
-  for (ASDKListenerToken *gateToken in self.gateTokens) {
+  for (ASDKListenerToken *gateToken in self.gateTokensByBaseUrl.allValues) {
     [self.amplyInstance unregisterGateToken:gateToken];
   }
-  [self.gateTokens removeAllObjects];
+  [self.gateTokensByBaseUrl removeAllObjects];
+  [self.gatePresentersByBaseUrl removeAllObjects];
 
   [[NSNotificationCenter defaultCenter] removeObserver:self];
   self.logListenerRegistered = NO;

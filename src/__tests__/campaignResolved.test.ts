@@ -26,6 +26,7 @@ const mockNativeModule = {
   getDataSetSnapshot: jest.fn(),
   registerDeepLinkListener: jest.fn(),
   registerGate: jest.fn(),
+  unregisterGate: jest.fn(),
   addListener: jest.fn(),
   removeListeners: jest.fn(),
   onSystemEvent: jest.fn(),
@@ -133,7 +134,7 @@ describe('Amply gate API (trackGated + registerGate)', () => {
   });
 
   describe('registerGate', () => {
-    it('registers once on the native module per baseUrl and subscribes to onCampaignPresent', async () => {
+    it('registers on the native module and subscribes to onCampaignPresent', async () => {
       const remove = jest.fn();
       mockNativeModule.onCampaignPresent.mockReturnValue({remove});
 
@@ -144,12 +145,29 @@ describe('Amply gate API (trackGated + registerGate)', () => {
       expect(mockNativeModule.registerGate).toHaveBeenCalledWith('stillframe://ad', 'cancel', 0);
       expect(mockNativeModule.onCampaignPresent).toHaveBeenCalledTimes(1);
 
-      // Second registration of the same baseUrl re-subscribes but does NOT re-register.
-      await Amply.registerGate('stillframe://ad', jest.fn());
-      expect(mockNativeModule.registerGate).toHaveBeenCalledTimes(1);
-
       unsubscribe();
       expect(remove).toHaveBeenCalledTimes(1);
+      expect(mockNativeModule.unregisterGate).toHaveBeenCalledWith('stillframe://ad');
+    });
+
+    // This used to assert the opposite — that a second registration re-subscribed but did
+    // NOT re-register natively. That encoded the defect: the second subscriber joined the
+    // shared onCampaignPresent channel while the first stayed on it, so one presentation was
+    // handed to both presenters, and the second call's onAbort/timeout were silently dropped.
+    // See https://trello.com/c/Gq589zwz; the full behaviour is covered in
+    // gateRegistrationLifecycle.test.ts.
+    it('replaces the previous registration when the same baseUrl is registered again', async () => {
+      mockNativeModule.onCampaignPresent.mockReturnValue({remove: jest.fn()});
+
+      await Amply.registerGate('stillframe://ad', jest.fn());
+      await Amply.registerGate('stillframe://ad', jest.fn(), {timeoutMs: 5000});
+
+      expect(mockNativeModule.unregisterGate).toHaveBeenCalledWith('stillframe://ad');
+      expect(mockNativeModule.registerGate).toHaveBeenLastCalledWith(
+        'stillframe://ad',
+        'cancel',
+        5000,
+      );
     });
 
     it('passes through onAbort and timeoutMs options', async () => {

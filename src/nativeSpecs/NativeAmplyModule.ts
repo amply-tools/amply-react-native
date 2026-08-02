@@ -185,6 +185,15 @@ export interface Spec extends TurboModule {
    * @param timeoutMs Max time the gate waits for a presenter result before failing open.
    */
   registerGate(baseUrl: string, onAbort: string, timeoutMs: number): void;
+  /**
+   * Withdraw the gate registered for `baseUrl`. A no-op when none is registered.
+   *
+   * Required for withdrawal to mean anything: the gate registry is process-scoped, so a gate
+   * left registered by a presenter that has gone away parks the next gated call on that URL
+   * for its whole fail-open timeout — with no crash, no error and no console trace.
+   * @param baseUrl The gate action base URL passed to {@link registerGate}.
+   */
+  unregisterGate(baseUrl: string): void;
   getRecentEvents(limit: number): Promise<EventRecord[]>;
   getDataSetSnapshot(type: DataSetType): Promise<DataSetSnapshot>;
   registerDeepLinkListener(): void;

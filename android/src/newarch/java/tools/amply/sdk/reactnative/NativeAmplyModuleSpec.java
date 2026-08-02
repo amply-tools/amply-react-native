@@ -72,6 +72,10 @@ public abstract class NativeAmplyModuleSpec extends ReactContextBaseJavaModule i
 
   @ReactMethod
   @DoNotStrip
+  public abstract void unregisterGate(String baseUrl);
+
+  @ReactMethod
+  @DoNotStrip
   public abstract void getRecentEvents(double limit, Promise promise);
 
   @ReactMethod

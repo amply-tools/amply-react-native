@@ -26,6 +26,11 @@
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>amply</string>
+				<!-- Matches the Android manifest, which has always registered amplybare. The
+				     example claimed only "amply" here, which the iOS SDK sample also claims —
+				     so a link to either was ambiguous and iOS asked the user which app to
+				     open. Same scheme set on both platforms removes that. -->
+				<string>amplybare</string>
 			</array>
 		</dict>
 	</array>

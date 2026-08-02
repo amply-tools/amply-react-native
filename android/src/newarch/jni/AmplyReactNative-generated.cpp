@@ -42,6 +42,11 @@ static facebook::jsi::Value __hostFunction_NativeAmplyModuleSpecJSI_registerGate
   return static_cast<JavaTurboModule &>(turboModule).invokeJavaMethod(rt, VoidKind, "registerGate", "(Ljava/lang/String;Ljava/lang/String;D)V", args, count, cachedMethodId);
 }
 
+static facebook::jsi::Value __hostFunction_NativeAmplyModuleSpecJSI_unregisterGate(facebook::jsi::Runtime& rt, TurboModule &turboModule, const facebook::jsi::Value* args, size_t count) {
+  static jmethodID cachedMethodId = nullptr;
+  return static_cast<JavaTurboModule &>(turboModule).invokeJavaMethod(rt, VoidKind, "unregisterGate", "(Ljava/lang/String;)V", args, count, cachedMethodId);
+}
+
 static facebook::jsi::Value __hostFunction_NativeAmplyModuleSpecJSI_getRecentEvents(facebook::jsi::Runtime& rt, TurboModule &turboModule, const facebook::jsi::Value* args, size_t count) {
   static jmethodID cachedMethodId = nullptr;
   return static_cast<JavaTurboModule &>(turboModule).invokeJavaMethod(rt, PromiseKind, "getRecentEvents", "(DLcom/facebook/react/bridge/Promise;)V", args, count, cachedMethodId);
@@ -110,6 +115,7 @@ NativeAmplyModuleSpecJSI::NativeAmplyModuleSpecJSI(const JavaTurboModule::InitPa
   methodMap_["trackGated"] = MethodMetadata {2, __hostFunction_NativeAmplyModuleSpecJSI_trackGated};
   methodMap_["resolveCampaign"] = MethodMetadata {2, __hostFunction_NativeAmplyModuleSpecJSI_resolveCampaign};
   methodMap_["registerGate"] = MethodMetadata {3, __hostFunction_NativeAmplyModuleSpecJSI_registerGate};
+  methodMap_["unregisterGate"] = MethodMetadata {1, __hostFunction_NativeAmplyModuleSpecJSI_unregisterGate};
   methodMap_["getRecentEvents"] = MethodMetadata {1, __hostFunction_NativeAmplyModuleSpecJSI_getRecentEvents};
   methodMap_["getDataSetSnapshot"] = MethodMetadata {1, __hostFunction_NativeAmplyModuleSpecJSI_getDataSetSnapshot};
   methodMap_["registerDeepLinkListener"] = MethodMetadata {0, __hostFunction_NativeAmplyModuleSpecJSI_registerDeepLinkListener};

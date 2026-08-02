@@ -72,6 +72,10 @@ namespace facebook::react {
       return static_cast<ObjCTurboModule&>(turboModule).invokeObjCMethod(rt, VoidKind, "registerGate", @selector(registerGate:onAbort:timeoutMs:), args, count);
     }
 
+    static facebook::jsi::Value __hostFunction_NativeAmplyModuleSpecJSI_unregisterGate(facebook::jsi::Runtime& rt, TurboModule &turboModule, const facebook::jsi::Value* args, size_t count) {
+      return static_cast<ObjCTurboModule&>(turboModule).invokeObjCMethod(rt, VoidKind, "unregisterGate", @selector(unregisterGate:), args, count);
+    }
+
     static facebook::jsi::Value __hostFunction_NativeAmplyModuleSpecJSI_getRecentEvents(facebook::jsi::Runtime& rt, TurboModule &turboModule, const facebook::jsi::Value* args, size_t count) {
       return static_cast<ObjCTurboModule&>(turboModule).invokeObjCMethod(rt, PromiseKind, "getRecentEvents", @selector(getRecentEvents:resolve:reject:), args, count);
     }
@@ -139,6 +143,9 @@ namespace facebook::react {
         
         
         methodMap_["registerGate"] = MethodMetadata {3, __hostFunction_NativeAmplyModuleSpecJSI_registerGate};
+        
+        
+        methodMap_["unregisterGate"] = MethodMetadata {1, __hostFunction_NativeAmplyModuleSpecJSI_unregisterGate};
         
         
         methodMap_["getRecentEvents"] = MethodMetadata {1, __hostFunction_NativeAmplyModuleSpecJSI_getRecentEvents};

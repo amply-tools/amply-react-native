@@ -25,10 +25,24 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
     window = UIWindow(frame: UIScreen.main.bounds)
 
+    // Verification affordance: `-amplyAutogate "amplybare://autogate?action=bonus&outcome=watched"`
+    // is injected as the launch URL, which is what Linking.getInitialURL() reads.
+    //
+    // It exists because `simctl openurl` cannot drive this app unattended — iOS puts up an
+    // "Open in …?" confirmation for any custom scheme and the simulator cannot be tapped from
+    // outside in this setup. Without it the gate path on RN iOS can only be checked by hand,
+    // and a check nobody can script is one that happens once.
+    var options = launchOptions ?? [:]
+    if let autogate = UserDefaults.standard.string(forKey: "amplyAutogate"),
+       let url = URL(string: autogate) {
+      options[.url] = url
+      NSLog("[AmplyBareExample] autogate launch URL: %@", autogate)
+    }
+
     factory.startReactNative(
       withModuleName: "AmplyBareExample",
       in: window,
-      launchOptions: launchOptions
+      launchOptions: options
     )
 
     return true
