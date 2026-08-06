@@ -1,6 +1,6 @@
 {
   "name": "@amplytools/react-native-amply-sdk",
-  "version": "0.10.1",
+  "version": "0.11.0",
   "description": "React Native SDK for Amply: Mobile SDK to orchestrate in-app experiences and campaigns remotely, without app releases",
   "license": "MIT",
   "repository": {
