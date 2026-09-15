@@ -1,0 +1,118 @@
+# Amply sample apps — required control inventory
+#
+# CANONICAL COPY. The verbatim duplicate lives at
+#   react-native-sdk/example/sample-manifest.txt
+# because the two repos are separate gits and the RN package is published/mirrored
+# publicly, so it cannot depend on a sibling checkout existing. Both copies must stay
+# byte-identical: each repo's scripts/check-sample-parity.sh locates the other copy when
+# the sibling repo is present and FAILS on any difference. Edit this file, then copy it
+# across, in the same wave.
+#
+# One row per control that every sample must carry. The `id` is the exact string the
+# sample tags its real widget with, in the platform's standard testing attribute:
+#
+#   iOS (UIKit)      view.accessibilityIdentifier = "amply.events.track"
+#   Android (Compose) Modifier.testTag("amply.events.track")
+#   React Native     testID="amply.events.track"
+#
+# The id literal must sit on the SAME LINE as the attribute — no indirection through a
+# constants map for these ids. That co-location is what the checker can actually verify.
+#
+# Two machine-readable markers may start the note field:
+#   prefix:    the id is a prefix; real ids are `<id>.<something>` and the checker
+#              matches `"<id>.` rather than `"<id>"`.
+#   launcharg: not a UI control — the id is a launch key name that must appear literally
+#              in the sample's source (SAMPLE_APP_SPEC.md §7). No attribute is required.
+# Every other row is an exact id: the checker matches `"<id>"`, quote to quote.
+#
+# Columns: x = required on that platform · - = not applicable, reason in the note.
+# The prose that defines what each control DOES is samples/SAMPLE_APP_SPEC.md.
+#
+# revision: 5
+
+# id                                 | android | ios | rn | note
+
+# --- Home §1 SDK ---------------------------------------------------------------
+amply.sdk.status                     | x | x | x |
+amply.sdk.identity                   | x | x | x | session id renders `n/a (SDK-GAP-2)` where the facade has no getSessionManager()
+amply.sdk.initialize                 | x | x | x | rendered only while status is not `ready`
+amply.sdk.autoinit                   | x | x | x |
+amply.sdk.inspect                    | x | x | x |
+amply.sdk.credentials                | x | x | x | opens the credentials editor: primary "Set API keys" while refusing, secondary "Edit API keys" once configured
+amply.sdk.credentials.editor         | x | x | x | the editor container — four fixed rows of the parameter builder (spec 5.5)
+amply.sdk.credentials.key            | x | x | x | prefix: amply.sdk.credentials.key.<index> — fixed captions, not editable
+amply.sdk.credentials.value          | x | x | x | prefix: amply.sdk.credentials.value.<index>
+amply.sdk.credentials.save           | x | x | x |
+amply.sdk.credentials.cancel         | x | x | x |
+amply.sdk.credentials.clear          | x | x | x | rendered only once something is stored; without it a mistyped stored key outranks a correct file forever
+
+# --- Home §2 Events ------------------------------------------------------------
+amply.events.name                    | x | x | x |
+amply.events.properties              | x | x | x | the parameter builder container, not a free-text field
+amply.events.properties.add          | x | x | x | [+] appends one empty parameter row
+amply.events.properties.key          | x | x | x | prefix: amply.events.properties.key.<index>
+amply.events.properties.value        | x | x | x | prefix: amply.events.properties.value.<index>
+amply.events.properties.type         | x | x | x | prefix: ...type.<index> — string | number | boolean | datetime
+amply.events.properties.remove       | x | x | x | prefix: amply.events.properties.remove.<index>
+amply.events.track                   | x | x | x |
+amply.events.recent                  | x | x | x |
+amply.events.recent.chip             | x | x | x | prefix: each chip is amply.events.recent.chip.<index>
+
+# --- Home §3 Campaigns ---------------------------------------------------------
+amply.campaigns.list                 | x | x | x |
+amply.campaigns.refire               | x | x | x |
+amply.campaigns.gate.level           | x | x | x |
+amply.campaigns.gate.bonus           | x | x | x |
+amply.campaigns.gate.withdraw        | x | x | x |
+amply.campaigns.trace                | x | x | x |
+
+# --- Home §4 Deeplink ----------------------------------------------------------
+amply.deeplink.panel                 | x | x | x |
+
+# --- Home §5 Log ---------------------------------------------------------------
+amply.log.list                       | x | x | x |
+amply.log.filter                     | x | x | x | container id for the filter row; each chip is amply.log.filter.<kind>
+amply.log.source.sdk                 | x | x | - | RN has no bridge for setLogListener (SDK-GAP-3), so RN's log is system events only
+
+# --- Inspect -------------------------------------------------------------------
+amply.inspect.identity               | x | x | x |
+amply.inspect.permissions.status     | - | x | - | ATT is iOS-only; other platforms render a static note carrying no id
+amply.inspect.permissions.request    | - | x | - | ATT is iOS-only; other platforms render a static note carrying no id
+amply.inspect.dataset.picker         | x | x | x |
+amply.inspect.dataset.custom         | x | x | x | the @custom option specifically — unreachable from every sample today
+amply.inspect.dataset.snapshot       | x | x | x |
+amply.inspect.dataset.refresh        | x | x | x |
+amply.inspect.dataset.trigger        | x | x | x | Trigger & Refresh; enabled only for @triggeredEvent
+amply.inspect.props.list             | x | x | x |
+amply.inspect.props.set              | x | x | x | [+] opens one row of the SAME parameter builder as amply.events.properties
+amply.inspect.props.key              | x | x | x | prefix: amply.inspect.props.key.<index>
+amply.inspect.props.value            | x | x | x | prefix: amply.inspect.props.value.<index>
+amply.inspect.props.type             | x | x | x | prefix: ...type.<index> — string | number | boolean | datetime
+amply.inspect.props.clear            | x | x | x |
+
+# --- Deterministic screenshots (SAMPLE_APP_SPEC.md §7) --------------------------
+amply.snapshot.ready                 | x | x | x | marker set on the root view once the -amplySnapshot target screen is rendered and settled
+amplySnapshot                        | x | x | x | launcharg: navigate straight to <screen-id>, no animation, no tap; inert when absent
+amplySeed                            | x | x | x | launcharg: replace sample state with the fixed seed script; inert when absent
+
+# --- Retired -------------------------------------------------------------------
+# Ids that were required once and must NOT come back. A checker that only asks
+# "is the id present" cannot see a control that should have been deleted, so a
+# removal is otherwise held together by trust. These are failed ON SIGHT.
+#
+# retired: amply.inspect.log — the Inspect tab carried a 30-row copy of the Log
+#   tab's list. Same source, same filters, a different row cap. Shown both, the
+#   founder asked what the difference was; there was none. One log (spec §5.4).
+
+# --- Shared strings ------------------------------------------------------------
+# Wordings the spec requires all three platforms to render identically. Control ids
+# are checked above; the SENTENCES a reader actually sees were not checked by
+# anything, and the difference matters: the amber cleared-credentials notice was
+# written into RN from the spec table while the native constants did not yet exist,
+# and the byte-for-byte match had to be confirmed by hand. Confirmed by hand means
+# unconfirmed the next time someone edits one of the three.
+#
+# Format: string: <label> | <swift symbol> | <kotlin symbol> | <ts symbol>
+#
+# string: refusal-cause | refusalCause | REFUSAL_CAUSE | REFUSAL_CAUSE
+# string: cleared | clearedWhileRunningNotice | CLEARED_WHILE_RUNNING_NOTICE | RUNNING_ON_CLEARED_CREDENTIALS

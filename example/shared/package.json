@@ -1,0 +1,9 @@
+{
+  "name": "@amply/sample-shared",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The Amply sample app screens, rendered identically by example/bare and example/expo.",
+  "main": "src/index.ts",
+  "react-native": "src/index.ts",
+  "source": "src/index.ts"
+}

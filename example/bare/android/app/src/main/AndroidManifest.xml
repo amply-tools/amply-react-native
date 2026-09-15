@@ -33,6 +33,18 @@
             <data android:scheme="amplybare" android:host="campaign" />
             <data android:scheme="https" android:host="amply.tools" />
         </intent-filter>
+        <!-- The sample's own scheme with NO host restriction. A filter that names any host
+             requires every URI to match one of them, so the campaign filter above cannot also
+             carry `amplybare://snapshot?...` — the launch contract's transport
+             (SAMPLE_APP_SPEC.md §7.3) would silently not resolve. -->
+        <intent-filter>
+            <action android:name="android.intent.action.VIEW" />
+
+            <category android:name="android.intent.category.DEFAULT" />
+            <category android:name="android.intent.category.BROWSABLE" />
+
+            <data android:scheme="amplybare" />
+        </intent-filter>
       </activity>
     </application>
 </manifest>

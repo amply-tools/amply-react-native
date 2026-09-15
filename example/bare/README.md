@@ -1,8 +1,40 @@
-This is the bare React Native example app for `@amply/amply-react-native` (React Native 0.81).
+This is the bare React Native example for `@amplytools/react-native-amply-sdk` (React Native 0.81).
 
-- Installs the Amply bridge via a local `file:` dependency.
-- Demonstrates init, tracking, dataset fetch, and deep-link subscription from `src/App.tsx`.
-- Uses the shared sample credentials baked into `src/App.tsx`; replace them with project-specific keys as needed.
+**It is the release gate.** `release.sh` builds this app on both platforms before any RN publish —
+Android against `tools.amply:sdk-android` from Maven, iOS against the `AmplySDK` pod — so it is the
+only sample in the family whose native halves compile against *published* artifacts on both
+platforms, and it must never be broken.
+
+- The JS is linked locally (`link:../..`) under the **published package name**, the same string an
+  integrator writes. It used to be linked under a legacy `@amply/amply-react-native` alias, which
+  meant the release gate exercised an import nobody outside this repo could have.
+- Every screen comes from `../shared`; this host contributes the target config, the safe-area
+  provider, the status bar, and the URL schemes in `ios/AmplyBareExample/Info.plist` and
+  `android/app/src/main/AndroidManifest.xml`.
+- **Give it keys in the app**: SDK tab → `Set API keys`. They are stored on the device, outrank
+  `src/sampleConfig.ts`, and survive a relaunch, so setup is a task inside the app measured in
+  seconds rather than an edit-and-reload. `Clear stored keys` is the way back to the file.
+- The committed keys are placeholders, and the SDK falls back to its **production** endpoints, so
+  the sample **refuses to initialise** until it has a real pair — starting anyway posted sessions
+  production rejected, ~543 a day. Editing `src/sampleConfig.ts` still works and is what CI uses;
+  it is simply no longer the only door. See `SAMPLE_APP_SPEC.md` §5.5.
+
+What each control means is specified once, in the KMP repo:
+`multiplatform-library-template/samples/SAMPLE_APP_SPEC.md`. Do not restate it here.
+
+## Linking the local SDK
+
+```sh
+cd example/bare
+yarn install     # installs @amplytools/react-native-amply-sdk from `link:../..`
+```
+
+`metro.config.js` pins `react`, `react-native` and the other singletons to this app's copies. The
+SDK repo root has its own `node_modules/react-native` (a devDependency of the library), and metro
+resolves a module by walking up from the importing FILE — so without that pin, anything under
+`../shared` loaded a *second* React Native and the app died on its first `<Text>` with "View config
+getter callback for component `RCTText` must be a function". `extraNodeModules` cannot fix it: that
+map is consulted only when resolution FAILS, and there it succeeds, on the wrong copy.
 
 # Getting Started
 

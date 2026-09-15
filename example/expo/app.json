@@ -1,13 +1,43 @@
 {
   "expo": {
-    "entryPoint": "./app/index.tsx",
-    "plugins": [],
-    "scheme": ["amply", "amplyexpo"],
-    "android": {
-      "package": "tools.amply.sdk.sample.expo"
-    },
+    "name": "AmplyExpoExample",
+    "slug": "amply-expo-example",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "icon": "./assets/images/icon.png",
+
+    "//scheme": "Its own scheme, never a shared amply:// — see README.md, Deterministic screenshots.",
+    "scheme": "amplyexpo",
+
     "ios": {
-      "bundleIdentifier": "tools.amply.sdk.sample.expo"
-    }
+      "bundleIdentifier": "tools.amply.sdk.sample.expo",
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "tools.amply.sdk.sample.expo",
+      "edgeToEdgeEnabled": true,
+      "adaptiveIcon": {
+        "backgroundColor": "#000000",
+        "foregroundImage": "./assets/images/android-icon-foreground.png",
+        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+      }
+    },
+
+    "//plugins": "The ONLY plugin list Expo reads. A second one lived in expo.config.js, which is not a filename Expo resolves — see README.md, Configuration.",
+    "plugins": [
+      "expo-router",
+      "./plugins/withFmtCpp17",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/splash-icon.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#000000"
+        }
+      ]
+    ]
   }
 }

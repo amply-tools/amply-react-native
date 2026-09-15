@@ -2,14 +2,35 @@
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
     "strict": true,
+    "resolveJsonModule": true,
     "paths": {
       "@/*": [
         "./*"
+      ],
+      "@amply/sample-shared": [
+        "../shared/src/index.ts"
+      ],
+      "@amplytools/react-native-amply-sdk": [
+        "../../src/index.ts"
+      ],
+      "@react-native-async-storage/async-storage": [
+        "./node_modules/@react-native-async-storage/async-storage"
+      ],
+      "react-native-safe-area-context": [
+        "./node_modules/react-native-safe-area-context"
       ]
     }
   },
   "include": [
     "**/*.ts",
-    "**/*.tsx"
+    "**/*.tsx",
+    "../shared/src/**/*.ts",
+    "../shared/src/**/*.tsx"
+  ],
+  "exclude": [
+    "**/node_modules",
+    "**/Pods",
+    "ios",
+    "android"
   ]
 }
