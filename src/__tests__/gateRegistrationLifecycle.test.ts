@@ -221,7 +221,7 @@ describe('gate registration lifecycle', () => {
       expect(mockNativeModule.registerGate).not.toHaveBeenCalled();
 
       mockNativeModule.isInitialized.mockReturnValue(true);
-      await Amply.initialize({apiKey: 'k', apiKeySecret: 's'} as never);
+      await Amply.initialize({appId: 'a', apiKeyPublic: 'k', apiKeySecret: 's'});
 
       expect(mockNativeModule.registerGate).toHaveBeenCalledWith('stillframe://ad', 'cancel', 0);
 
@@ -237,7 +237,7 @@ describe('gate registration lifecycle', () => {
       expect(mockNativeModule.registerDeepLinkListener).not.toHaveBeenCalled();
 
       mockNativeModule.isInitialized.mockReturnValue(true);
-      await Amply.initialize({apiKey: 'k', apiKeySecret: 's'} as never);
+      await Amply.initialize({appId: 'a', apiKeyPublic: 'k', apiKeySecret: 's'});
 
       expect(mockNativeModule.registerDeepLinkListener).toHaveBeenCalledTimes(1);
     });
@@ -257,7 +257,7 @@ describe('gate registration lifecycle', () => {
       await Amply.registerGate('stillframe://ad', second);
 
       mockNativeModule.isInitialized.mockReturnValue(true);
-      await Amply.initialize({apiKey: 'k', apiKeySecret: 's'} as never);
+      await Amply.initialize({appId: 'a', apiKeyPublic: 'k', apiKeySecret: 's'});
 
       emitPresentation();
       await flushMicrotasks();
@@ -273,7 +273,7 @@ describe('gate registration lifecycle', () => {
       unsubscribe();
 
       mockNativeModule.isInitialized.mockReturnValue(true);
-      await Amply.initialize({apiKey: 'k', apiKeySecret: 's'} as never);
+      await Amply.initialize({appId: 'a', apiKeyPublic: 'k', apiKeySecret: 's'});
 
       expect(mockNativeModule.registerGate).not.toHaveBeenCalled();
     });

@@ -334,11 +334,20 @@ class AmplyModule(reactContext: ReactApplicationContext) :
 
   // ---- твои helper-методы без изменений ----
 
-  private fun ReadableMap.toInitializationOptions(): AmplyInitializationOptions {
-    val appId = getString("appId") ?: throw IllegalArgumentException("'appId' is required")
-    val apiKeyPublic = getString("apiKeyPublic") ?: throw IllegalArgumentException("'apiKeyPublic' is required")
+  private fun ReadableMap.requiredString(key: String): String {
+    val value = if (hasKey(key)) getString(key) else null
+    if (value.isNullOrBlank()) throw IllegalArgumentException("'$key' is required")
+    return value
+  }
 
-    val apiKeySecret = if (hasKey("apiKeySecret")) getString("apiKeySecret") else null
+  private fun ReadableMap.toInitializationOptions(): AmplyInitializationOptions {
+    // All three keys are required, blank included: a blank secret used to pass straight through
+    // and sign every request with an empty key, which the backend refuses — a silent failure
+    // instead of this rejection.
+    val appId = requiredString("appId")
+    val apiKeyPublic = requiredString("apiKeyPublic")
+    val apiKeySecret = requiredString("apiKeySecret")
+
     val configBaseUrl = if (hasKey("configBaseUrl")) getString("configBaseUrl") else null
     val backendBaseUrl = if (hasKey("backendBaseUrl")) getString("backendBaseUrl") else null
     val endpoint = if (hasKey("endpoint")) getString("endpoint") else null

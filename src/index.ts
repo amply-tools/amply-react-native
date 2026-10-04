@@ -6,7 +6,7 @@ export type {FormatOptions} from './systemEventUtils';
 import type {
   CampaignResult,
   GateDecision,
-  AmplyInitializationConfig,
+  AmplyInitializationConfig as NativeInitializationConfig,
   DataSetSnapshot,
   DataSetType,
   DeepLinkEvent,
@@ -15,6 +15,36 @@ import type {
   CampaignPresentEvent,
   TrackEventPayload,
 } from './nativeSpecs/NativeAmplyModule';
+
+/**
+ * The keys from your application's page in Amply. All three are required: the SDK signs every
+ * request with `apiKeySecret` on the device, so the secret ships inside the app next to the
+ * public key. The codegen spec keeps the field optional only so the generated native structs
+ * stay unchanged; this is the contract callers see.
+ */
+export type AmplyInitializationConfig = Omit<NativeInitializationConfig, 'apiKeySecret'> & {
+  apiKeySecret: string;
+};
+
+const REQUIRED_KEYS = ['appId', 'apiKeyPublic', 'apiKeySecret'] as const;
+
+/** Rejection raised by {@link initialize} for a config the SDK cannot start with. */
+export class AmplyConfigError extends Error {
+  readonly code = 'AMP_INVALID_CONFIG';
+
+  constructor(message: string) {
+    super(message);
+    this.name = 'AmplyConfigError';
+  }
+}
+
+/** The first required key that is missing or blank, if any. */
+function missingKey(config: Partial<Record<(typeof REQUIRED_KEYS)[number], unknown>>): string | undefined {
+  return REQUIRED_KEYS.find((key) => {
+    const value = config?.[key];
+    return typeof value !== 'string' || value.trim().length === 0;
+  });
+}
 
 let deepLinkRegistered = false;
 let debugLogListenerRegistered = false;
@@ -189,6 +219,15 @@ function trackDeepLinkSubscription(subscription?: {remove?: () => void}): () => 
 }
 
 export async function initialize(config: AmplyInitializationConfig): Promise<void> {
+  // Checked here, before the native module sees anything: a missing key used to reach the
+  // native config builder, which threw across the Objective-C boundary and aborted the host
+  // app. Bad keys cost the app its Amply — never its process. The SDK stays uninitialized.
+  const missing = missingKey(config);
+  if (missing) {
+    const message = `[Amply] '${missing}' is required — Amply is not initialized. Copy it from your application's page in Amply.`;
+    console.error(message);
+    throw new AmplyConfigError(message);
+  }
   // Set up debug log listener if debug mode is enabled
   if (config.debug || config.logLevel) {
     ensureDebugLogListener();
@@ -570,7 +609,6 @@ export function removeAllListeners(): void {
 }
 
 export type {
-  AmplyInitializationConfig,
   DataSetSnapshot,
   DataSetType,
   DeepLinkEvent,

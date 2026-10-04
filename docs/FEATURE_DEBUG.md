@@ -211,12 +211,13 @@ fun getLogLevel(): LogLevel
 ### Initialize with Debug Mode
 
 ```typescript
-import Amply from '@anthropic/react-native-amply-sdk';
+import Amply from '@amplytools/react-native-amply-sdk';
 
 // Option 1: Simple debug flag
 await Amply.initialize({
   appId: 'my-app-id',
   apiKeyPublic: 'my-public-key',
+  apiKeySecret: 'my-secret-key',
   debug: true,  // Enables all logging
 });
 
@@ -224,6 +225,7 @@ await Amply.initialize({
 await Amply.initialize({
   appId: 'my-app-id',
   apiKeyPublic: 'my-public-key',
+  apiKeySecret: 'my-secret-key',
   logLevel: 'info',  // Only info, warn, error
 });
 ```

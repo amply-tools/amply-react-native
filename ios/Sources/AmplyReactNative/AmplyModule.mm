@@ -158,6 +158,15 @@ RCT_EXPORT_MODULE()
   return self;
 }
 
+// A key counts as given only if something other than whitespace is left — the same rule the JS
+// layer and the Android bridge apply. Nil-safe: messaging nil returns nil, whose length is 0.
+static BOOL AmplyIsBlank(NSString *value)
+{
+  NSString *trimmed =
+      [value stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+  return trimmed.length == 0;
+}
+
 - (void)initialize:(JS::NativeAmplyModule::AmplyInitializationConfig &)config
            resolve:(RCTPromiseResolveBlock)resolve
             reject:(RCTPromiseRejectBlock)reject
@@ -176,16 +185,26 @@ RCT_EXPORT_MODULE()
     NSString *effectiveBackendBaseUrl =
         (backendBaseUrl && backendBaseUrl.length > 0) ? backendBaseUrl : legacyEndpoint;
 
-    if (!appId || appId.length == 0) {
+    if (AmplyIsBlank(appId)) {
       if (reject) {
         reject(@"AMP_INVALID_CONFIG", @"'appId' is required", nil);
       }
       return;
     }
 
-    if (!apiKeyPublic || apiKeyPublic.length == 0) {
+    if (AmplyIsBlank(apiKeyPublic)) {
       if (reject) {
         reject(@"AMP_INVALID_CONFIG", @"'apiKeyPublic' is required", nil);
+      }
+      return;
+    }
+
+    // Required like the two above. Dropped silently, it reached the KMP config builder, whose
+    // requireNotNull threw a Kotlin exception across the Objective-C boundary: @try cannot catch
+    // that, so the host app aborted at launch instead of getting this rejection.
+    if (AmplyIsBlank(apiKeySecret)) {
+      if (reject) {
+        reject(@"AMP_INVALID_CONFIG", @"'apiKeySecret' is required", nil);
       }
       return;
     }
@@ -197,9 +216,7 @@ RCT_EXPORT_MODULE()
     [configBuilder apiBlock:^(ASDKAmplyApiBuilder *apiBuilder) {
       apiBuilder.appId = appId;
       apiBuilder.apiKeyPublic = apiKeyPublic;
-      if (apiKeySecret && apiKeySecret.length > 0) {
-        apiBuilder.apiKeySecret = apiKeySecret;
-      }
+      apiBuilder.apiKeySecret = apiKeySecret;
     }];
 
     // Applied rather than merely accepted. These were never read at all here, so
@@ -975,9 +992,19 @@ static ASDKDataSetType *AmplyDataSetTypeFromDictionary(NSDictionary *type, NSStr
 
 - (void)setUserId:(NSString *)userId
 {
-  if (self.amplyInstance) {
-    [self.amplyInstance setUserIdUserId:userId];
+  // Buffered like the property calls above rather than dropped: an app that identifies the
+  // user before `initialize` resolves used to lose that id on iOS without a word.
+  void (^apply)(ASDKAmply *) = ^(ASDKAmply *instance) {
+    [instance setUserIdUserId:userId];
     RCTLogInfo(@"[AmplyReactNative] User ID set to: %@", userId ?: @"<null>");
+  };
+
+  if (self.amplyInstance) {
+    apply(self.amplyInstance);
+  } else {
+    RCTLogInfo(@"[AmplyReactNative] Buffering setUserId until init");
+    if (!self.pendingPropertyOps) self.pendingPropertyOps = [NSMutableArray new];
+    [self.pendingPropertyOps addObject:apply];
   }
 }
 

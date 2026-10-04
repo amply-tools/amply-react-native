@@ -29,17 +29,43 @@ describe('Amply JS API', () => {
   });
 
   it('initializes the native module', async () => {
-    await Amply.initialize({ appId: 'id', apiKeyPublic: 'public' });
+    await Amply.initialize({ appId: 'id', apiKeyPublic: 'public', apiKeySecret: 'secret' });
 
     expect(mockNativeModule.initialize).toHaveBeenCalledWith(
       expect.objectContaining({ appId: 'id', apiKeyPublic: 'public' })
     );
   });
 
+  // A missing key used to reach the native SDK, whose config builder threw an exception that
+  // crossed into Objective-C uncaught and aborted the host app — no JS try/catch could stop it.
+  // Bad keys must cost the app its Amply, never its process.
+  describe.each([
+    ['apiKeySecret', { appId: 'id', apiKeyPublic: 'public' }],
+    ['apiKeySecret', { appId: 'id', apiKeyPublic: 'public', apiKeySecret: '' }],
+    ['apiKeySecret', { appId: 'id', apiKeyPublic: 'public', apiKeySecret: '   ' }],
+    ['apiKeySecret', { appId: 'id', apiKeyPublic: 'public', apiKeySecret: null }],
+    ['apiKeyPublic', { appId: 'id', apiKeyPublic: '', apiKeySecret: 'secret' }],
+    ['appId', { appId: '', apiKeyPublic: 'public', apiKeySecret: 'secret' }],
+  ])('when %s is missing (%j)', (field, config) => {
+    it('rejects with AMP_INVALID_CONFIG, names the field and never calls the native module', async () => {
+      const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+      await expect(Amply.initialize(config as never)).rejects.toMatchObject({
+        code: 'AMP_INVALID_CONFIG',
+        message: expect.stringContaining(field),
+      });
+      expect(mockNativeModule.initialize).not.toHaveBeenCalled();
+      expect(error).toHaveBeenCalledWith(expect.stringContaining(field));
+
+      error.mockRestore();
+    });
+  });
+
   it('passes the base-URL overrides through to the native layer', async () => {
     await Amply.initialize({
       appId: 'id',
       apiKeyPublic: 'public',
+      apiKeySecret: 'secret',
       configBaseUrl: 'https://config-staging.example.com',
       backendBaseUrl: 'https://api-staging.example.com',
     });
@@ -59,6 +85,7 @@ describe('Amply JS API', () => {
     await Amply.initialize({
       appId: 'id',
       apiKeyPublic: 'public',
+      apiKeySecret: 'secret',
       endpoint: 'https://api-staging.example.com',
     });
 

@@ -144,9 +144,16 @@ class DefaultAmplyClient(
         synchronized(propertyLock) {
           amplyInstance = instance
           if (pendingPropertyOps.isNotEmpty()) {
-            android.util.Log.i("AmplyReactNative", "Draining ${pendingPropertyOps.size} buffered property operations")
-            pendingPropertyOps.forEach { op -> op(instance) }
+            // Taken out of the list before running, and each op guarded: one throwing op used to
+            // abort the drain after amplyInstance was already set, so the rest were never
+            // replayed and initialize rejected while isInitialized() reported true.
+            val ops = pendingPropertyOps.toList()
             pendingPropertyOps.clear()
+            android.util.Log.i("AmplyReactNative", "Draining ${ops.size} buffered property operations")
+            ops.forEach { op ->
+              runCatching { op(instance) }
+                .onFailure { android.util.Log.w("AmplyReactNative", "Buffered property operation failed", it) }
+            }
           }
         }
 
@@ -362,9 +369,20 @@ class DefaultAmplyClient(
   }
 
   override fun setUserId(userId: String?) {
-    val instance = requireInstance()
-    instance.setUserId(userId)
-    android.util.Log.i("AmplyReactNative", "User ID set to: ${userId ?: "<null>"}")
+    // Buffered like the property calls below. It used to requireInstance(), and this runs from a
+    // void TurboModule method, so the IllegalStateException never reached JS: calling setUserId
+    // before a successful initialize (for example after initialize rejected over a missing key)
+    // crashed the host app.
+    synchronized(propertyLock) {
+      val instance = amplyInstance
+      if (instance != null) {
+        instance.setUserId(userId)
+        android.util.Log.i("AmplyReactNative", "User ID set to: ${userId ?: "<null>"}")
+      } else {
+        android.util.Log.i("AmplyReactNative", "Buffering setUserId until init")
+        pendingPropertyOps.add { it.setUserId(userId) }
+      }
+    }
   }
 
   override fun setCustomProperty(key: String, value: Any) {
