@@ -92,6 +92,10 @@ public abstract class NativeAmplyModuleSpec extends ReactContextBaseJavaModule i
 
   @ReactMethod
   @DoNotStrip
+  public abstract void setAppLanguage(@Nullable String tag);
+
+  @ReactMethod
+  @DoNotStrip
   public abstract void setLogLevel(String level);
 
   @ReactMethod(isBlockingSynchronousMethod = true)

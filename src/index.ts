@@ -232,9 +232,106 @@ export async function initialize(config: AmplyInitializationConfig): Promise<voi
   if (config.debug || config.logLevel) {
     ensureDebugLogListener();
   }
-  await getNativeModule().initialize(config);
+  // Taken now, synchronously: a call made after this point is later than the config and must
+  // stay parked so it is applied after it.
+  const parked = takeParkedAppLanguage();
+  try {
+    await getNativeModule().initialize(withParkedAppLanguage(config, parked));
+  } catch (error) {
+    // Nothing reached the SDK, so the call still has to — unless a newer one replaced it.
+    if (parkedAppLanguage == null && isLatestLanguageWrite(parked)) {
+      parkedAppLanguage = parked;
+    }
+    throw error;
+  }
+  // A parked clear cannot travel in the config, where null means "leave it alone". Replayed only
+  // if nothing newer came in while initialize was in flight: the native SDK reports itself up
+  // before this promise settles, and a call made in that window has already reached it.
+  if (parked?.tag === null && !hasText(config.appLanguage) && isLatestLanguageWrite(parked)) {
+    getNativeModule().setAppLanguage(null);
+  }
+  flushParkedAppLanguage();
   // Anything the host registered before this point was parked rather than lost.
   replayPendingRegistrations();
+}
+
+/**
+ * A {@link setAppLanguage} call made before the SDK was up. Boxed so that a parked `null` — a
+ * request to return to automatic detection — is distinguishable from nothing parked.
+ *
+ * The native bridges buffer such calls too, but replay them AFTER building the SDK, which applies
+ * the config's `appLanguage` first. An earlier call would then overwrite a later config value,
+ * the opposite of "last write wins". Parking it here lets {@link initialize} put the two in the
+ * order they were made.
+ */
+let parkedAppLanguage: LanguageWrite | null = null;
+
+/**
+ * One {@link setAppLanguage} call. `seq` orders it against every other call, forwarded or held:
+ * a held value is applied only while it is still the latest write, so one taken before
+ * initialize cannot be replayed over a call the native SDK received while initialize was in
+ * flight.
+ */
+interface LanguageWrite {
+  readonly tag: string | null;
+  readonly seq: number;
+}
+
+/** Bumped by every {@link setAppLanguage} call, whether it is forwarded or held. */
+let languageWriteSeq = 0;
+
+function isLatestLanguageWrite(write: LanguageWrite | null): write is LanguageWrite {
+  return write != null && write.seq === languageWriteSeq;
+}
+
+function hasText(value: string | null | undefined): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function takeParkedAppLanguage(): LanguageWrite | null {
+  const parked = parkedAppLanguage;
+  parkedAppLanguage = null;
+  return parked;
+}
+
+/** The config's own appLanguage wins: initialize was called after the parked call. */
+function withParkedAppLanguage(
+  config: AmplyInitializationConfig,
+  parked: LanguageWrite | null,
+): AmplyInitializationConfig {
+  if (hasText(config.appLanguage) || parked == null || parked.tag === null) {
+    return config;
+  }
+  return {...config, appLanguage: parked.tag};
+}
+
+function flushParkedAppLanguage(): void {
+  const parked = takeParkedAppLanguage();
+  if (isLatestLanguageWrite(parked)) {
+    getNativeModule().setAppLanguage(parked.tag);
+  }
+}
+
+/**
+ * Tell Amply the language your app's UI is in, so sheets, stories and mini-apps show in the
+ * matching language and campaigns can target it. Use this when the app chooses its language
+ * itself (an in-app language picker, i18next, …) rather than following the device.
+ *
+ * Any common tag format works — `'pt_BR'`, `'pt-BR'`, `'zh-TW'`, `'fr'`, any case. A value that
+ * is not a language tag is ignored by the SDK with a warning log. The value is persisted across
+ * launches; pass `null` to return to automatic detection. The device language is never changed.
+ *
+ * Safe to call before {@link initialize}: the value is held and applied at initialization, and
+ * an `appLanguage` passed to a later `initialize` call wins over it.
+ * @param tag The language tag, or null to clear
+ */
+export function setAppLanguage(tag: string | null): void {
+  languageWriteSeq += 1;
+  if (isSdkUp()) {
+    getNativeModule().setAppLanguage(tag);
+    return;
+  }
+  parkedAppLanguage = {tag, seq: languageWriteSeq};
 }
 
 /**
@@ -642,6 +739,7 @@ export default {
   addSystemEventsListener,
   removeAllListeners,
   setUserId,
+  setAppLanguage,
   setLogLevel,
   getLogLevel,
   setCustomProperty,

@@ -179,6 +179,7 @@ static BOOL AmplyIsBlank(NSString *value)
     NSString *backendBaseUrl = config.backendBaseUrl();
     NSString *legacyEndpoint = config.endpoint();
     NSString *defaultConfig = config.defaultConfig();
+    NSString *appLanguage = config.appLanguage();
 
     // `backendBaseUrl` wins over the deprecated `endpoint` when both are given:
     // a caller who names the new field has said what they mean.
@@ -239,6 +240,12 @@ static BOOL AmplyIsBlank(NSString *value)
     // Set default config if provided
     if (defaultConfig && defaultConfig.length > 0) {
       configBuilder.defaultConfig = defaultConfig;
+    }
+
+    // Same as setAppLanguage at init; the SDK applies it while building the instance. Blank
+    // names no language, so it is left out rather than handed over to be warned about.
+    if (!AmplyIsBlank(appLanguage)) {
+      configBuilder.appLanguage = appLanguage;
     }
 
     ASDKAmplyConfig *amplyConfig = [configBuilder build];
@@ -1003,6 +1010,24 @@ static ASDKDataSetType *AmplyDataSetTypeFromDictionary(NSDictionary *type, NSStr
     apply(self.amplyInstance);
   } else {
     RCTLogInfo(@"[AmplyReactNative] Buffering setUserId until init");
+    if (!self.pendingPropertyOps) self.pendingPropertyOps = [NSMutableArray new];
+    [self.pendingPropertyOps addObject:apply];
+  }
+}
+
+- (void)setAppLanguage:(NSString *)tag
+{
+  // Buffered like setUserId. The JS layer already holds a pre-init call and folds it into the
+  // config, so this only catches a call that reaches native before the instance exists anyway.
+  void (^apply)(ASDKAmply *) = ^(ASDKAmply *instance) {
+    [instance setAppLanguageTag:tag];
+    RCTLogInfo(@"[AmplyReactNative] App language set to: %@", tag ?: @"<null>");
+  };
+
+  if (self.amplyInstance) {
+    apply(self.amplyInstance);
+  } else {
+    RCTLogInfo(@"[AmplyReactNative] Buffering setAppLanguage until init");
     if (!self.pendingPropertyOps) self.pendingPropertyOps = [NSMutableArray new];
     [self.pendingPropertyOps addObject:apply];
   }

@@ -385,6 +385,21 @@ class DefaultAmplyClient(
     }
   }
 
+  override fun setAppLanguage(tag: String?) {
+    // Buffered like setUserId. The JS layer already holds a pre-init call and folds it into the
+    // config, so this only catches a call that reaches native before the instance exists anyway.
+    synchronized(propertyLock) {
+      val instance = amplyInstance
+      if (instance != null) {
+        instance.setAppLanguage(tag)
+        android.util.Log.i("AmplyReactNative", "App language set to: ${tag ?: "<null>"}")
+      } else {
+        android.util.Log.i("AmplyReactNative", "Buffering setAppLanguage until init")
+        pendingPropertyOps.add { it.setAppLanguage(tag) }
+      }
+    }
+  }
+
   override fun setCustomProperty(key: String, value: Any) {
     synchronized(propertyLock) {
       val instance = amplyInstance
@@ -534,6 +549,8 @@ class DefaultAmplyClient(
         }
       }
       options.defaultConfig?.let { defaultConfig = it }
+      // Same as setAppLanguage at init; the SDK applies it while building the instance.
+      options.appLanguage?.let { appLanguage = it }
     }
   }
 

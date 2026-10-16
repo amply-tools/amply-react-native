@@ -46,6 +46,12 @@ export type AmplyInitializationConfig = {
    * Takes precedence over `debug` if both are specified.
    */
   logLevel?: LogLevel | null;
+  /**
+   * The language the app's UI is in, in any common format (`'pt_BR'`, `'zh-TW'`, `'fr'`).
+   * The same as calling `setAppLanguage` right after initialization, and persisted the same
+   * way. Omitted, null or blank leaves the current setting alone.
+   */
+  appLanguage?: string | null;
 };
 
 export type EventType = 'custom' | 'system';
@@ -202,6 +208,12 @@ export interface Spec extends TurboModule {
    * @param userId The user ID to set, or null to clear
    */
   setUserId(userId: string | null): void;
+  /**
+   * Set the language the app's UI is in. Any common tag format; null returns to automatic
+   * detection. Persisted by the SDK across launches.
+   * @param tag The language tag, or null to clear
+   */
+  setAppLanguage(tag: string | null): void;
   /**
    * Set the log level at runtime.
    * @param level The log level to set

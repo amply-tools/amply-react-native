@@ -72,6 +72,8 @@ interface AmplyClient {
 
   fun setUserId(userId: String?)
 
+  fun setAppLanguage(tag: String?)
+
   fun setLogLevel(level: LogLevel)
   fun getLogLevel(): LogLevel
 

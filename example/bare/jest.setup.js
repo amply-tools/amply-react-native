@@ -39,6 +39,7 @@ __setNativeModule({
   getDataSetSnapshot: () => Promise.resolve({}),
   registerDeepLinkListener: () => {},
   setUserId: () => {},
+  setAppLanguage: () => {},
   setLogLevel: () => {},
   getLogLevel: () => 'debug',
   setCustomProperties: () => {},

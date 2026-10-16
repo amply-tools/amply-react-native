@@ -60,6 +60,12 @@ await Amply.track({
 // Identify users
 Amply.setUserId('user-123');
 
+// If your app picks its UI language itself (an in-app picker, i18next, …), tell Amply,
+// so campaigns show in that language. Any common format: 'pt_BR', 'pt-BR', 'zh-TW', 'fr'.
+// Persisted across launches; pass null to go back to following the device.
+// Can also be given up front: Amply.initialize({ ..., appLanguage: 'pt_BR' }).
+Amply.setAppLanguage('pt_BR'); // e.g. i18next's i18n.language
+
 // Set custom properties for targeting
 Amply.setCustomProperties({ plan: 'premium', onboarded: true });
 

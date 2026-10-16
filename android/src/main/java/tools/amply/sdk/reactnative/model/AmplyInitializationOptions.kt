@@ -35,6 +35,8 @@ data class AmplyInitializationOptions(
   val defaultConfig: String?,
   val debug: Boolean?,
   val logLevel: LogLevel?,
+  /** The app's UI language, any common tag format. Same as setAppLanguage at init. */
+  val appLanguage: String? = null,
 ) {
     /**
      * Get the effective log level, resolving debug vs logLevel precedence.

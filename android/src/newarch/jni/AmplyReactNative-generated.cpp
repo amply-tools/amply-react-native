@@ -67,6 +67,11 @@ static facebook::jsi::Value __hostFunction_NativeAmplyModuleSpecJSI_setUserId(fa
   return static_cast<JavaTurboModule &>(turboModule).invokeJavaMethod(rt, VoidKind, "setUserId", "(Ljava/lang/String;)V", args, count, cachedMethodId);
 }
 
+static facebook::jsi::Value __hostFunction_NativeAmplyModuleSpecJSI_setAppLanguage(facebook::jsi::Runtime& rt, TurboModule &turboModule, const facebook::jsi::Value* args, size_t count) {
+  static jmethodID cachedMethodId = nullptr;
+  return static_cast<JavaTurboModule &>(turboModule).invokeJavaMethod(rt, VoidKind, "setAppLanguage", "(Ljava/lang/String;)V", args, count, cachedMethodId);
+}
+
 static facebook::jsi::Value __hostFunction_NativeAmplyModuleSpecJSI_setLogLevel(facebook::jsi::Runtime& rt, TurboModule &turboModule, const facebook::jsi::Value* args, size_t count) {
   static jmethodID cachedMethodId = nullptr;
   return static_cast<JavaTurboModule &>(turboModule).invokeJavaMethod(rt, VoidKind, "setLogLevel", "(Ljava/lang/String;)V", args, count, cachedMethodId);
@@ -120,6 +125,7 @@ NativeAmplyModuleSpecJSI::NativeAmplyModuleSpecJSI(const JavaTurboModule::InitPa
   methodMap_["getDataSetSnapshot"] = MethodMetadata {1, __hostFunction_NativeAmplyModuleSpecJSI_getDataSetSnapshot};
   methodMap_["registerDeepLinkListener"] = MethodMetadata {0, __hostFunction_NativeAmplyModuleSpecJSI_registerDeepLinkListener};
   methodMap_["setUserId"] = MethodMetadata {1, __hostFunction_NativeAmplyModuleSpecJSI_setUserId};
+  methodMap_["setAppLanguage"] = MethodMetadata {1, __hostFunction_NativeAmplyModuleSpecJSI_setAppLanguage};
   methodMap_["setLogLevel"] = MethodMetadata {1, __hostFunction_NativeAmplyModuleSpecJSI_setLogLevel};
   methodMap_["getLogLevel"] = MethodMetadata {0, __hostFunction_NativeAmplyModuleSpecJSI_getLogLevel};
   methodMap_["setCustomProperties"] = MethodMetadata {1, __hostFunction_NativeAmplyModuleSpecJSI_setCustomProperties};

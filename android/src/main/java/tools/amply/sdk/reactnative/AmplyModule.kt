@@ -195,6 +195,10 @@ class AmplyModule(reactContext: ReactApplicationContext) :
     client.setUserId(userId)
   }
 
+  override fun setAppLanguage(tag: String?) {
+    client.setAppLanguage(tag)
+  }
+
   override fun setLogLevel(level: String) {
     val newLevel = LogLevel.fromString(level)
     client.setLogLevel(newLevel)
@@ -354,6 +358,9 @@ class AmplyModule(reactContext: ReactApplicationContext) :
     val defaultConfig = if (hasKey("defaultConfig")) getString("defaultConfig") else null
     val debug = if (hasKey("debug")) getBoolean("debug") else null
     val logLevel = if (hasKey("logLevel")) LogLevel.fromString(getString("logLevel")) else null
+    // Blank names no language: left out rather than handed to the SDK to be warned about.
+    val appLanguage = (if (hasKey("appLanguage")) getString("appLanguage") else null)
+      ?.takeIf { it.isNotBlank() }
 
     return AmplyInitializationOptions(
       appId = appId,
@@ -365,6 +372,7 @@ class AmplyModule(reactContext: ReactApplicationContext) :
       defaultConfig = defaultConfig,
       debug = debug,
       logLevel = logLevel,
+      appLanguage = appLanguage,
     )
   }
 

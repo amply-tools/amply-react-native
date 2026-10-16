@@ -152,6 +152,7 @@ export interface Spec extends TurboModule {
   getRecentEvents(limit: number): Promise<EventRecord[]>;
   getDataSetSnapshot(type: DataSetType): Promise<DataSetSnapshot>;
   setUserId(userId: string | null): void;
+  setAppLanguage(tag: string | null): void;
   setLogLevel(level: string): void;
   getLogLevel(): string;
   setCustomProperties(properties: JsonMap): void;
@@ -776,6 +777,7 @@ Each step is separate because:
 | Feature | What it does | Status |
 |---------|-------------|--------|
 | `setUserId(userId)` | Associate user ID with events | ✅ Implemented |
+| `setAppLanguage(tag)` / `appLanguage` init option | Tell Amply the app's UI language (any tag format; `null` = automatic) | ✅ Implemented |
 | `setCustomProperty(key, value)` | Store a persistent custom property | ✅ Implemented |
 | `setCustomProperties(props)` | Store multiple custom properties at once | ✅ Implemented |
 | `getCustomProperty(key)` | Retrieve a custom property value | ✅ Implemented |

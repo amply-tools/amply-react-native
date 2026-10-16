@@ -44,6 +44,7 @@ namespace JS {
       NSString *defaultConfig() const;
       std::optional<bool> debug() const;
       NSString *logLevel() const;
+      NSString *appLanguage() const;
 
       AmplyInitializationConfig(NSDictionary *const v) : _v(v) {}
     private:
@@ -98,6 +99,7 @@ namespace JS {
                     reject:(RCTPromiseRejectBlock)reject;
 - (void)registerDeepLinkListener;
 - (void)setUserId:(NSString * _Nullable)userId;
+- (void)setAppLanguage:(NSString * _Nullable)tag;
 - (void)setLogLevel:(NSString *)level;
 - (NSString *)getLogLevel;
 - (void)setCustomProperties:(NSDictionary *)properties;
@@ -174,6 +176,11 @@ inline std::optional<bool> JS::NativeAmplyModule::AmplyInitializationConfig::deb
 inline NSString *JS::NativeAmplyModule::AmplyInitializationConfig::logLevel() const
 {
   id const p = _v[@"logLevel"];
+  return RCTBridgingToOptionalString(p);
+}
+inline NSString *JS::NativeAmplyModule::AmplyInitializationConfig::appLanguage() const
+{
+  id const p = _v[@"appLanguage"];
   return RCTBridgingToOptionalString(p);
 }
 inline NSString *JS::NativeAmplyModule::TrackEventPayload::name() const
