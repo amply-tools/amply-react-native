@@ -598,20 +598,29 @@ yarn codegen
 #### **2. JavaScript Bundling (TypeScript → JS)**
 
 ```bash
-yarn build
-# Internally runs: expo-module build (which uses tsup)
+yarn build:package
+# rm -rf dist plugin/build, then expo-module build (tsc), expo-module build plugin,
+# tsc -p tsconfig.cjs.json, then scripts/check-package.js
 ```
 
 **What it does:**
-- Compiles TypeScript to JavaScript using `tsup`
-- Generates ES Modules (`.mjs`) and CommonJS (`.js`)
-- Type checks via `tsc` → generates `.d.ts` files
-- Outputs to `dist/` directory
+- `expo-module build` runs `tsc` with `tsconfig.json`: ES modules plus `.d.ts` into `dist/src/` (and `dist/plugin/`)
+- `expo-module build plugin` compiles the Expo plugin into `plugin/build/` (what `app.plugin.js` requires)
+- `tsc -p tsconfig.cjs.json` writes a CommonJS copy of `src/` into `dist/cjs/`
+- `scripts/check-package.js` checks the tarball `npm pack` would produce (below)
 
 **Outputs:**
-- `dist/index.js` – CommonJS entry point (consumers importing from Node)
-- `dist/index.mjs` – ES Module entry point (bundlers like Metro)
-- `dist/src/**/*.d.ts` – TypeScript declarations
+- `dist/cjs/index.js` – `main`, CommonJS (Jest and anything else that `require`s the package)
+- `dist/src/index.js` – `module`, ES modules (bundlers)
+- `src/index.ts` – `react-native`; Metro compiles the source itself
+- `dist/src/**/*.d.ts` – TypeScript declarations (`types`)
+
+**The package check.** Until 0.15.0 `main` pointed at `dist/index.js`, a bundle from an early tsup build
+that no later build rewrote or removed, so every release shipped the API of late 2025. Metro never
+noticed (it reads `react-native`). `check-package.js` fails when an entry in package.json is not in the
+tarball, when `main` does not export exactly what `src/index.ts` exports, or when a compiled file in the
+tarball has no source file. `yarn test` runs it, and release.sh runs it before the release commit and
+again right before `npm publish`.
 
 **When to run:**
 - After changing any TypeScript/JavaScript code
@@ -704,25 +713,23 @@ When you link the SDK to example apps, these are called automatically:
 ### Script Dependency Chain
 
 ```
-developer runs yarn build
+developer runs yarn build:package
         ↓
-expo-module build (wrapper script)
+rm -rf dist plugin/build (no leftovers from an older build can ship)
         ↓
-tsup (TypeScript bundler)
-  ├─→ tsc (compile TS)
-  ├─→ writes dist/index.js (CommonJS)
-  └─→ writes dist/index.mjs (ES Module)
+expo-module build → tsc → dist/src/** (ESM + .d.ts), dist/plugin/**
         ↓
-tsc --project tsconfig.build.json
-  └─→ writes dist/src/**/*.d.ts (type declarations)
+expo-module build plugin → plugin/build/**
         ↓
-dist/ is ready for consumption
+tsc -p tsconfig.cjs.json → dist/cjs/** (CommonJS, main)
+        ↓
+scripts/check-package.js (entries ship, main == src/index.ts exports, no orphans)
 ```
 
 ### Why So Many Compile Steps?
 
 1. **Codegen** – Generates native stubs (Java, C++, ObjC++)
-2. **JS bundling** – Converts TS to JS for Node and Metro
+2. **JS compile** – Converts TS to JS for Node/Jest (CommonJS) and bundlers (ESM)
 3. **Type generation** – Creates `.d.ts` for consumers
 4. **Plugin build** – Separate build for Expo plugin code
 

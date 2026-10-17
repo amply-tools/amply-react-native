@@ -1,6 +1,6 @@
 {
   "name": "@amplytools/react-native-amply-sdk",
-  "version": "0.15.0",
+  "version": "0.15.1",
   "description": "React Native SDK for Amply: Mobile SDK to orchestrate in-app experiences and campaigns remotely, without app releases",
   "license": "MIT",
   "repository": {
@@ -11,8 +11,8 @@
   "bugs": {
     "url": "https://github.com/amply-tools/amply-react-native/issues"
   },
-  "main": "dist/index.js",
-  "module": "dist/index.mjs",
+  "main": "dist/cjs/index.js",
+  "module": "dist/src/index.js",
   "types": "dist/src/index.d.ts",
   "react-native": "src/index.ts",
   "source": "src/index.ts",
@@ -27,19 +27,25 @@
     "react-native.config.js",
     "app.plugin.js",
     "README.md",
-    "docs/"
+    "docs/",
+    "!dist/**/__tests__",
+    "!src/**/__tests__",
+    "!**/*.tsbuildinfo"
   ],
   "scripts": {
     "build": "expo-module build",
     "build:plugin": "expo-module build plugin",
+    "build:cjs": "tsc -p tsconfig.cjs.json",
+    "build:package": "rm -rf dist plugin/build && EXPO_NONINTERACTIVE=1 expo-module build && EXPO_NONINTERACTIVE=1 expo-module build plugin && tsc -p tsconfig.cjs.json && node scripts/check-package.js",
     "clean": "expo-module clean",
-    "test": "node scripts/codegen.js --check && expo-module test && yarn check:seam-tokens && yarn check:sample-parity",
+    "test": "node scripts/codegen.js --check && expo-module test && yarn check:seam-tokens && yarn check:sample-parity && yarn build:package",
     "prepare": "expo-module prepare",
     "prepublishOnly": "expo-module prepublishOnly",
     "codegen": "node scripts/codegen.js",
     "codegen:check": "node scripts/codegen.js --check",
     "check:seam-tokens": "bash scripts/check-seam-tokens.sh",
-    "check:sample-parity": "bash scripts/check-sample-parity.sh"
+    "check:sample-parity": "bash scripts/check-sample-parity.sh",
+    "check:package": "node scripts/check-package.js"
   },
   "peerDependencies": {
     "expo": ">=54.0.0",
