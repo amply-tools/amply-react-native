@@ -2,6 +2,7 @@ package tools.amply.sdk.reactnative.core
 
 import android.app.Activity
 import tools.amply.sdk.reactnative.model.AmplyInitializationOptions
+import tools.amply.sdk.reactnative.model.CampaignTouchPayload
 import tools.amply.sdk.reactnative.model.DataSetType
 import tools.amply.sdk.reactnative.model.DeepLinkPayload
 import tools.amply.sdk.reactnative.model.EventEnvelope
@@ -65,6 +66,13 @@ interface AmplyClient {
 
   suspend fun getRecentEvents(limit: Int): List<EventEnvelope>
 
+  /**
+   * The SDK's `getLastCampaignTouch(withinMs)`: the newest campaign touch at most [withinMs] ago
+   * (clamped by the SDK to [0, 30 days]). Null when there is none, and also before
+   * initialisation — the SDK answers null there rather than throwing, and so does the bridge.
+   */
+  suspend fun getLastCampaignTouch(withinMs: Long): CampaignTouchPayload?
+
   suspend fun getDataSetSnapshot(type: DataSetType): Map<String, Any?>
 
   fun registerDeepLinkListener()
@@ -73,6 +81,9 @@ interface AmplyClient {
   fun setUserId(userId: String?)
 
   fun setAppLanguage(tag: String?)
+
+  /** True when the SDK recognised [url] as its own and took it over; false otherwise or when not initialised. */
+  fun handleUrl(url: String): Boolean
 
   fun setLogLevel(level: LogLevel)
   fun getLogLevel(): LogLevel

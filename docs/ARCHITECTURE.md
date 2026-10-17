@@ -150,6 +150,7 @@ export interface Spec extends TurboModule {
   isInitialized(): boolean;
   track(payload: TrackEventPayload): Promise<void>;
   getRecentEvents(limit: number): Promise<EventRecord[]>;
+  getLastCampaignTouch(withinMs: number): Promise<CampaignTouchPayload | null>;
   getDataSetSnapshot(type: DataSetType): Promise<DataSetSnapshot>;
   setUserId(userId: string | null): void;
   setAppLanguage(tag: string | null): void;
@@ -961,6 +962,7 @@ src/
   ├─ index.ts                    # Public API (what users import)
   ├─ nativeModule.ts             # Module loader
   ├─ systemEvents.ts             # Event listener helper
+  ├─ campaignTouch.ts            # CampaignTouch type + getLastCampaignTouch payload narrowing
   ├─ hooks/
   │  └─ useAmplySystemEvents.ts # React hook
   └─ nativeSpecs/

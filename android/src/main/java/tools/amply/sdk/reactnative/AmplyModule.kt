@@ -5,6 +5,7 @@ import tools.amply.sdk.reactnative.core.AmplyClient
 import tools.amply.sdk.reactnative.core.DefaultAmplyClient
 import tools.amply.sdk.reactnative.core.GateDecision
 import tools.amply.sdk.reactnative.model.AmplyInitializationOptions
+import tools.amply.sdk.reactnative.model.CampaignTouchPayload
 import tools.amply.sdk.reactnative.model.DataSetType
 import tools.amply.sdk.reactnative.model.DataSetType.EventParam
 import tools.amply.sdk.reactnative.model.DataSetType.Events
@@ -153,6 +154,16 @@ class AmplyModule(reactContext: ReactApplicationContext) :
     }
   }
 
+  override fun getLastCampaignTouch(withinMs: Double, promise: Promise) {
+    scope.launch {
+      try {
+        promise.resolve(client.getLastCampaignTouch(withinMs.toLong())?.toWritableMap())
+      } catch (throwable: Throwable) {
+        promise.reject(CAMPAIGN_TOUCH_ERROR, throwable)
+      }
+    }
+  }
+
   override fun getDataSetSnapshot(type: ReadableMap, promise: Promise) {
     val datasetType = try {
       type.toDataSetType()
@@ -198,6 +209,8 @@ class AmplyModule(reactContext: ReactApplicationContext) :
   override fun setAppLanguage(tag: String?) {
     client.setAppLanguage(tag)
   }
+
+  override fun handleUrl(url: String): Boolean = client.handleUrl(url)
 
   override fun setLogLevel(level: String) {
     val newLevel = LogLevel.fromString(level)
@@ -427,6 +440,14 @@ class AmplyModule(reactContext: ReactApplicationContext) :
       putMap("properties", properties.toWritableMap())
     }
 
+  private fun CampaignTouchPayload.toWritableMap(): WritableMap =
+    Arguments.createMap().apply {
+      putString("campaignId", campaignId)
+      putString("campaignName", campaignName)
+      putString("kind", kind)
+      putDouble("atMs", atMs.toDouble())
+    }
+
   private fun List<EventEnvelope>.toWritableArray(): WritableArray {
     val array = Arguments.createArray()
     forEach { event ->
@@ -530,6 +551,7 @@ class AmplyModule(reactContext: ReactApplicationContext) :
     private const val ARGUMENT_ERROR = "AMP_INVALID_ARGUMENT"
     private const val TRACK_ERROR = "AMP_TRACK_FAILED"
     private const val EVENTS_ERROR = "AMP_EVENTS_FAILED"
+    private const val CAMPAIGN_TOUCH_ERROR = "AMP_CAMPAIGN_TOUCH_FAILED"
     private const val DATASET_ERROR = "AMP_DATASET_FAILED"
     private const val CUSTOM_PROP_ERROR = "AMP_CUSTOM_PROP_FAILED"
   }

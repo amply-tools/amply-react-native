@@ -27,8 +27,10 @@ export function formatSystemEventLabel(
   }
   if (event.name === 'CampaignShown') {
     const campaignId = event.properties.campaignId as string | undefined;
+    // Sent by SDK 0.15.0 and later (on CampaignShown and CampaignResolved alike).
+    const campaignName = event.properties.campaignName as string | undefined;
     const source = event.properties.source as string | undefined;
-    return `Campaign shown${campaignId ? ` (${campaignId})` : ''}${
+    return `Campaign shown${campaignName ? ` "${campaignName}"` : ''}${campaignId ? ` (${campaignId})` : ''}${
       source ? ` via ${source}` : ''
     }`;
   }

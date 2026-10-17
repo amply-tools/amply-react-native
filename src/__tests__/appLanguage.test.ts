@@ -294,3 +294,5 @@ describe('setAppLanguage while initialize is in flight', () => {
     expect(native.setAppLanguage.mock.calls).toEqual([['fr']]);
   });
 });
+
+export {};

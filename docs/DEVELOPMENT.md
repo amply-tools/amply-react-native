@@ -10,7 +10,8 @@ src/                               # TypeScript source (JS side)
   │   └── NativeAmplyModule.ts     # TurboModule spec (codegen source)
   ├── index.ts                      # Public API exports
   ├── nativeModule.ts               # Native module loader with fallbacks
-  └── systemEvents.ts               # Event emitter helpers
+  ├── systemEvents.ts               # Event emitter helpers
+  └── campaignTouch.ts              # CampaignTouch type + payload narrowing
 
 android/                           # Android native code
   ├── src/main/

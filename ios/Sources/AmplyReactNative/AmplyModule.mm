@@ -659,6 +659,52 @@ static NSDictionary *AmplyGateDecisionToMap(ASDKGateDecision *decision) {
   }];
 }
 
+// The JS spelling of a touch kind. A kind this bridge does not know is passed through lowercased
+// rather than dropped here: the TS layer is the one place that decides what an unknown kind means.
+static NSString *AmplyCampaignTouchKindToString(ASDKCampaignTouchKind *kind) {
+  if ([kind isEqual:ASDKCampaignTouchKind.shown]) return @"shown";
+  if ([kind isEqual:ASDKCampaignTouchKind.engaged]) return @"engaged";
+  return kind.name.lowercaseString ?: @"";
+}
+
+- (void)getLastCampaignTouch:(double)withinMs
+                     resolve:(RCTPromiseResolveBlock)resolve
+                      reject:(RCTPromiseRejectBlock)reject
+{
+  // Not a rejection, unlike getRecentEvents: the SDK answers "not initialised" with null for this
+  // query, and the bridge keeps that contract instead of inventing an error for it.
+  if (!self.amplyInstance) {
+    if (resolve) {
+      resolve([NSNull null]);
+    }
+    return;
+  }
+
+  [self.amplyInstance getLastCampaignTouchWithinMs:(int64_t)withinMs
+                                 completionHandler:^(ASDKCampaignTouch *touch, NSError *error) {
+    if (error) {
+      RCTLogError(@"[AmplyReactNative] Failed to get last campaign touch: %@", error.localizedDescription);
+      if (reject) {
+        reject(@"AMP_CAMPAIGN_TOUCH_FAILED", error.localizedDescription, error);
+      }
+      return;
+    }
+    if (!resolve) {
+      return;
+    }
+    if (!touch) {
+      resolve([NSNull null]);
+      return;
+    }
+    resolve(@{
+      @"campaignId": touch.campaignId ?: @"",
+      @"campaignName": touch.campaignName ?: @"",
+      @"kind": AmplyCampaignTouchKindToString(touch.kind),
+      @"atMs": @(touch.atMs),
+    });
+  }];
+}
+
 // Parses an array of `{name, value}` dicts into native EventParam objects.
 //
 // Bad-shape entries (non-dict, missing/non-string name) are silently dropped — this
@@ -1046,6 +1092,16 @@ static ASDKDataSetType *AmplyDataSetTypeFromDictionary(NSDictionary *type, NSStr
   }
 
   [[ASDKLogger shared] setLevelLevel:level];
+}
+
+- (NSNumber *)handleUrl:(NSString *)url
+{
+  // Not buffered: a link is only meaningful to a live SDK, and the answer is needed right now.
+  ASDKAmply *instance = self.amplyInstance;
+  if (instance == nil || url == nil) {
+    return @NO;
+  }
+  return @([instance handleUrlUrl:url]);
 }
 
 - (NSString *)getLogLevel

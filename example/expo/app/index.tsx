@@ -19,7 +19,7 @@ import {SAMPLE_CONFIG} from '../src/sampleConfig';
  */
 export default function Index(): React.JSX.Element {
   return (
-    <AmplySampleProvider config={SAMPLE_CONFIG}>
+    <AmplySampleProvider config={SAMPLE_CONFIG} forwardLinksToAmply={false}>
       <SampleTabs />
     </AmplySampleProvider>
   );

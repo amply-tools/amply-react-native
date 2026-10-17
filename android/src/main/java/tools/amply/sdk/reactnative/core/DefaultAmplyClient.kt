@@ -5,6 +5,7 @@ import android.app.Application
 import android.os.Handler
 import android.os.Looper
 import tools.amply.sdk.reactnative.model.AmplyInitializationOptions
+import tools.amply.sdk.reactnative.model.CampaignTouchPayload
 import tools.amply.sdk.reactnative.model.DataSetType
 import tools.amply.sdk.reactnative.model.DeepLinkPayload
 import tools.amply.sdk.reactnative.model.EventEnvelope
@@ -30,6 +31,8 @@ import tools.amply.sdk.actions.CampaignPresenter
 import tools.amply.sdk.actions.CampaignResolution
 import tools.amply.sdk.actions.CampaignResult
 import tools.amply.sdk.actions.DeepLinkListener
+import tools.amply.sdk.campaigns.CampaignTouch
+import tools.amply.sdk.campaigns.CampaignTouchKind
 import tools.amply.sdk.core.GateDecision as KmpGateDecision
 import tools.amply.sdk.core.ProceedReason as KmpProceedReason
 import tools.amply.sdk.config.AmplyConfig
@@ -291,6 +294,26 @@ class DefaultAmplyClient(
     }
   }
 
+  override suspend fun getLastCampaignTouch(withinMs: Long): CampaignTouchPayload? {
+    // Not requireInstance(): "not initialised" is an answer here (null), as it is in the SDK.
+    val instance = amplyInstance ?: return null
+    return withContext(Dispatchers.IO) {
+      instance.getLastCampaignTouch(withinMs)?.toPayload()
+    }
+  }
+
+  private fun CampaignTouch.toPayload(): CampaignTouchPayload = CampaignTouchPayload(
+    campaignId = campaignId,
+    campaignName = campaignName,
+    // Exhaustive on purpose: a kind added to the SDK must fail this build, not reach JS as a
+    // value the TS type does not admit.
+    kind = when (kind) {
+      CampaignTouchKind.SHOWN -> "shown"
+      CampaignTouchKind.ENGAGED -> "engaged"
+    },
+    atMs = atMs,
+  )
+
   override suspend fun getDataSetSnapshot(type: DataSetType): Map<String, Any?> {
     val instance = requireInstance()
     val nativeType = type.toNativeDataSetType()
@@ -398,6 +421,12 @@ class DefaultAmplyClient(
         pendingPropertyOps.add { it.setAppLanguage(tag) }
       }
     }
+  }
+
+  override fun handleUrl(url: String): Boolean {
+    // Not buffered: a link is only meaningful to a live SDK, and the answer is needed right now.
+    val instance = amplyInstance ?: return false
+    return instance.handleUrl(url)
   }
 
   override fun setCustomProperty(key: String, value: Any) {

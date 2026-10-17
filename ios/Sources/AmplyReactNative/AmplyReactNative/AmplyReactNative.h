@@ -94,12 +94,16 @@ namespace JS {
 - (void)getRecentEvents:(double)limit
                 resolve:(RCTPromiseResolveBlock)resolve
                  reject:(RCTPromiseRejectBlock)reject;
+- (void)getLastCampaignTouch:(double)withinMs
+                     resolve:(RCTPromiseResolveBlock)resolve
+                      reject:(RCTPromiseRejectBlock)reject;
 - (void)getDataSetSnapshot:(NSDictionary *)type
                    resolve:(RCTPromiseResolveBlock)resolve
                     reject:(RCTPromiseRejectBlock)reject;
 - (void)registerDeepLinkListener;
 - (void)setUserId:(NSString * _Nullable)userId;
 - (void)setAppLanguage:(NSString * _Nullable)tag;
+- (NSNumber *)handleUrl:(NSString *)url;
 - (void)setLogLevel:(NSString *)level;
 - (NSString *)getLogLevel;
 - (void)setCustomProperties:(NSDictionary *)properties;

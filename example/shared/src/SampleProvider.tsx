@@ -172,6 +172,12 @@ export function useSample(): SampleContextValue {
 
 type Props = {
   config: SampleTargetConfig;
+  /**
+   * Whether this provider hands incoming links to `Amply.handleUrl`. Default `true`. An app whose
+   * router already forwards them (expo-router, from `+native-intent`) sets `false`, so each link
+   * reaches Amply once. The sample's own snapshot links are read either way.
+   */
+  forwardLinksToAmply?: boolean;
   children: React.ReactNode;
 };
 
@@ -183,7 +189,11 @@ type Props = {
  * SDK's back — that is what makes a screenshot of a seeded sample evidence about the SDK rather
  * than evidence about the seeding code.
  */
-export function AmplySampleProvider({config, children}: Props): React.JSX.Element {
+export function AmplySampleProvider({
+  config,
+  forwardLinksToAmply = true,
+  children,
+}: Props): React.JSX.Element {
   const [status, setStatus] = useState<SdkStatus>(() =>
     safeIsInitialized() ? 'ready' : 'not-initialized',
   );
@@ -634,6 +644,11 @@ export function AmplySampleProvider({config, children}: Props): React.JSX.Elemen
       if (!url) {
         return;
       }
+      // Every incoming link goes to Amply first: a test-launch link is the SDK's, and the
+      // answer says whether the sample should keep looking at it.
+      if (forwardLinksToAmply && Amply.handleUrl(url)) {
+        return;
+      }
       const request = readSnapshotRequest(url);
       if (!request || requestRef.current) {
         return;
@@ -657,7 +672,7 @@ export function AmplySampleProvider({config, children}: Props): React.JSX.Elemen
     const subscription = Linking.addEventListener('url', ({url}) => consume(url));
     void Linking.getInitialURL().then(consume);
     return () => subscription.remove();
-  }, [appendLog, initialize]);
+  }, [appendLog, initialize, forwardLinksToAmply]);
 
   /**
    * SAMPLE_APP_SPEC.md §7.2. REPLACES sample state rather than appending to it, so a second run

@@ -3,6 +3,9 @@ import {addSystemEventListenerRaw, addSystemEventListener as addSystemEventListe
 export {useAmplySystemEvents} from './hooks/useAmplySystemEvents';
 export {formatSystemEventLabel} from './systemEventUtils';
 export type {FormatOptions} from './systemEventUtils';
+import {assertValidWithinMs, toCampaignTouch} from './campaignTouch';
+import type {CampaignTouch} from './campaignTouch';
+export type {CampaignTouch, CampaignTouchKind} from './campaignTouch';
 import type {
   CampaignResult,
   GateDecision,
@@ -238,6 +241,9 @@ export async function initialize(config: AmplyInitializationConfig): Promise<voi
   try {
     await getNativeModule().initialize(withParkedAppLanguage(config, parked));
   } catch (error) {
+    // A debug link parked for a failed start has nothing to open; replaying it later would
+    // surprise a retry that the user did not scan for.
+    parkedDebugUrl = null;
     // Nothing reached the SDK, so the call still has to — unless a newer one replaced it.
     if (parkedAppLanguage == null && isLatestLanguageWrite(parked)) {
       parkedAppLanguage = parked;
@@ -251,6 +257,7 @@ export async function initialize(config: AmplyInitializationConfig): Promise<voi
     getNativeModule().setAppLanguage(null);
   }
   flushParkedAppLanguage();
+  flushParkedDebugUrl();
   // Anything the host registered before this point was parked rather than lost.
   replayPendingRegistrations();
 }
@@ -332,6 +339,92 @@ export function setAppLanguage(tag: string | null): void {
     return;
   }
   parkedAppLanguage = {tag, seq: languageWriteSeq};
+}
+
+/** A debug link that arrived before the SDK was up. At most one: a newer link replaces it. */
+let parkedDebugUrl: string | null = null;
+
+const URL_SCHEME_PREFIX = /^[A-Za-z][A-Za-z0-9+.-]*:\/\//;
+const DEBUG_LINK_HOST = 'amply-debug';
+const DEBUG_LINK_PATH = '/campaign';
+const DEBUG_LINK_TOKEN_PARAM = 't';
+
+/**
+ * True for `<any scheme>://amply-debug/campaign?t=<non-empty>`. Parsed by hand, without decoding,
+ * so a malformed string is just "not a debug link" and can never throw.
+ */
+function isDebugLink(url: string): boolean {
+  const scheme = URL_SCHEME_PREFIX.exec(url);
+  if (scheme == null) {
+    return false;
+  }
+  const rest = url.slice(scheme[0].length).split('#')[0];
+  const queryStart = rest.indexOf('?');
+  if (queryStart < 0) {
+    return false;
+  }
+  const target = rest.slice(0, queryStart);
+  const slash = target.indexOf('/');
+  if (slash < 0 || target.slice(0, slash) !== DEBUG_LINK_HOST) {
+    return false;
+  }
+  if (target.slice(slash).replace(/\/+$/, '') !== DEBUG_LINK_PATH) {
+    return false;
+  }
+  return rest
+    .slice(queryStart + 1)
+    .split('&')
+    .some(pair => {
+      const eq = pair.indexOf('=');
+      return eq > 0 && pair.slice(0, eq) === DEBUG_LINK_TOKEN_PARAM && eq < pair.length - 1;
+    });
+}
+
+function flushParkedDebugUrl(): void {
+  const url = parkedDebugUrl;
+  parkedDebugUrl = null;
+  if (url == null) {
+    return;
+  }
+  try {
+    getNativeModule().handleUrl?.(url);
+  } catch (error) {
+    console.warn('[Amply] Failed to replay a debug link parked until initialize', error);
+  }
+}
+
+/**
+ * Hand an incoming URL to Amply. Call it for every link your app is opened with — cold start
+ * and while running — before your own routing; when it returns `true` Amply recognised the
+ * link as its own and took it over, so your app should not route it.
+ *
+ * Safe to call before {@link initialize}, which is how a cold-start link arrives: an Amply debug
+ * link is held (the newest one) and opened once initialization succeeds, and `true` is returned.
+ *
+ * Synchronous. Returns `false` for any other URL, for a non-string, and when the installed
+ * native SDK predates this method; it never throws.
+ * @param url The full incoming URL
+ */
+export function handleUrl(url: string): boolean {
+  if (typeof url !== 'string') {
+    return false;
+  }
+  try {
+    if (!isSdkUp()) {
+      if (!isDebugLink(url)) {
+        return false;
+      }
+      parkedDebugUrl = url;
+      return true;
+    }
+    const nativeModule = getNativeModule();
+    if (typeof nativeModule.handleUrl !== 'function') {
+      return false;
+    }
+    return nativeModule.handleUrl(url) === true;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -612,6 +705,35 @@ export async function getRecentEvents(limit: number): Promise<EventRecord[]> {
   return getNativeModule().getRecentEvents(limit);
 }
 
+/**
+ * The campaign the user was most recently touched by — shown, or completed — at most `withinMs`
+ * ago, or `null` if there was none.
+ *
+ * Use it to attribute a purchase (or any conversion) in your own analytics to the campaign that
+ * preceded it, including one made from somewhere other than the campaign's link:
+ *
+ * ```ts
+ * const touch = await Amply.getLastCampaignTouch(30 * 60 * 1000);
+ * analytics.track('Purchase', {sku, amply_campaign_id: touch?.campaignId});
+ * ```
+ *
+ * One touch per campaign, the newer of a show and a completion. `withinMs` is inclusive and
+ * capped at 30 days by the SDK. Resolves `null` before {@link initialize}, while the SDK's storage
+ * is off, and if the native call fails — it rejects only for a `withinMs` that is not a finite
+ * number >= 0, which is a bug at the call site.
+ */
+export async function getLastCampaignTouch(withinMs: number): Promise<CampaignTouch | null> {
+  assertValidWithinMs(withinMs);
+  try {
+    return toCampaignTouch(await getNativeModule().getLastCampaignTouch(withinMs));
+  } catch (error) {
+    // The SDK answers null for every state it can be in; a rejection here is the bridge itself
+    // failing, and an analytics lookup must never break the purchase flow that asked.
+    console.warn('[Amply] getLastCampaignTouch failed; resolving null', error);
+    return null;
+  }
+}
+
 export async function getDataSetSnapshot(type: DataSetType): Promise<DataSetSnapshot> {
   return getNativeModule().getDataSetSnapshot(type);
 }
@@ -733,6 +855,7 @@ export default {
   trackGated,
   registerGate,
   getRecentEvents,
+  getLastCampaignTouch,
   getDataSetSnapshot,
   addDeepLinkListener,
   addSystemEventListener,
@@ -740,6 +863,7 @@ export default {
   removeAllListeners,
   setUserId,
   setAppLanguage,
+  handleUrl,
   setLogLevel,
   getLogLevel,
   setCustomProperty,

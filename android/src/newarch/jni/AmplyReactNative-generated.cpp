@@ -52,6 +52,11 @@ static facebook::jsi::Value __hostFunction_NativeAmplyModuleSpecJSI_getRecentEve
   return static_cast<JavaTurboModule &>(turboModule).invokeJavaMethod(rt, PromiseKind, "getRecentEvents", "(DLcom/facebook/react/bridge/Promise;)V", args, count, cachedMethodId);
 }
 
+static facebook::jsi::Value __hostFunction_NativeAmplyModuleSpecJSI_getLastCampaignTouch(facebook::jsi::Runtime& rt, TurboModule &turboModule, const facebook::jsi::Value* args, size_t count) {
+  static jmethodID cachedMethodId = nullptr;
+  return static_cast<JavaTurboModule &>(turboModule).invokeJavaMethod(rt, PromiseKind, "getLastCampaignTouch", "(DLcom/facebook/react/bridge/Promise;)V", args, count, cachedMethodId);
+}
+
 static facebook::jsi::Value __hostFunction_NativeAmplyModuleSpecJSI_getDataSetSnapshot(facebook::jsi::Runtime& rt, TurboModule &turboModule, const facebook::jsi::Value* args, size_t count) {
   static jmethodID cachedMethodId = nullptr;
   return static_cast<JavaTurboModule &>(turboModule).invokeJavaMethod(rt, PromiseKind, "getDataSetSnapshot", "(Lcom/facebook/react/bridge/ReadableMap;Lcom/facebook/react/bridge/Promise;)V", args, count, cachedMethodId);
@@ -70,6 +75,11 @@ static facebook::jsi::Value __hostFunction_NativeAmplyModuleSpecJSI_setUserId(fa
 static facebook::jsi::Value __hostFunction_NativeAmplyModuleSpecJSI_setAppLanguage(facebook::jsi::Runtime& rt, TurboModule &turboModule, const facebook::jsi::Value* args, size_t count) {
   static jmethodID cachedMethodId = nullptr;
   return static_cast<JavaTurboModule &>(turboModule).invokeJavaMethod(rt, VoidKind, "setAppLanguage", "(Ljava/lang/String;)V", args, count, cachedMethodId);
+}
+
+static facebook::jsi::Value __hostFunction_NativeAmplyModuleSpecJSI_handleUrl(facebook::jsi::Runtime& rt, TurboModule &turboModule, const facebook::jsi::Value* args, size_t count) {
+  static jmethodID cachedMethodId = nullptr;
+  return static_cast<JavaTurboModule &>(turboModule).invokeJavaMethod(rt, BooleanKind, "handleUrl", "(Ljava/lang/String;)Z", args, count, cachedMethodId);
 }
 
 static facebook::jsi::Value __hostFunction_NativeAmplyModuleSpecJSI_setLogLevel(facebook::jsi::Runtime& rt, TurboModule &turboModule, const facebook::jsi::Value* args, size_t count) {
@@ -122,10 +132,12 @@ NativeAmplyModuleSpecJSI::NativeAmplyModuleSpecJSI(const JavaTurboModule::InitPa
   methodMap_["registerGate"] = MethodMetadata {3, __hostFunction_NativeAmplyModuleSpecJSI_registerGate};
   methodMap_["unregisterGate"] = MethodMetadata {1, __hostFunction_NativeAmplyModuleSpecJSI_unregisterGate};
   methodMap_["getRecentEvents"] = MethodMetadata {1, __hostFunction_NativeAmplyModuleSpecJSI_getRecentEvents};
+  methodMap_["getLastCampaignTouch"] = MethodMetadata {1, __hostFunction_NativeAmplyModuleSpecJSI_getLastCampaignTouch};
   methodMap_["getDataSetSnapshot"] = MethodMetadata {1, __hostFunction_NativeAmplyModuleSpecJSI_getDataSetSnapshot};
   methodMap_["registerDeepLinkListener"] = MethodMetadata {0, __hostFunction_NativeAmplyModuleSpecJSI_registerDeepLinkListener};
   methodMap_["setUserId"] = MethodMetadata {1, __hostFunction_NativeAmplyModuleSpecJSI_setUserId};
   methodMap_["setAppLanguage"] = MethodMetadata {1, __hostFunction_NativeAmplyModuleSpecJSI_setAppLanguage};
+  methodMap_["handleUrl"] = MethodMetadata {1, __hostFunction_NativeAmplyModuleSpecJSI_handleUrl};
   methodMap_["setLogLevel"] = MethodMetadata {1, __hostFunction_NativeAmplyModuleSpecJSI_setLogLevel};
   methodMap_["getLogLevel"] = MethodMetadata {0, __hostFunction_NativeAmplyModuleSpecJSI_getLogLevel};
   methodMap_["setCustomProperties"] = MethodMetadata {1, __hostFunction_NativeAmplyModuleSpecJSI_setCustomProperties};

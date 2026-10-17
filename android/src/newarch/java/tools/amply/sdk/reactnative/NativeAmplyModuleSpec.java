@@ -80,6 +80,10 @@ public abstract class NativeAmplyModuleSpec extends ReactContextBaseJavaModule i
 
   @ReactMethod
   @DoNotStrip
+  public abstract void getLastCampaignTouch(double withinMs, Promise promise);
+
+  @ReactMethod
+  @DoNotStrip
   public abstract void getDataSetSnapshot(ReadableMap type, Promise promise);
 
   @ReactMethod
@@ -93,6 +97,10 @@ public abstract class NativeAmplyModuleSpec extends ReactContextBaseJavaModule i
   @ReactMethod
   @DoNotStrip
   public abstract void setAppLanguage(@Nullable String tag);
+
+  @ReactMethod(isBlockingSynchronousMethod = true)
+  @DoNotStrip
+  public abstract boolean handleUrl(String url);
 
   @ReactMethod
   @DoNotStrip

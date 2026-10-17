@@ -69,7 +69,23 @@ export type EventRecord = {
   properties: JsonMap;
 };
 
+/**
+ * A system event from the SDK. `CampaignShown` and `CampaignResolved` carry `campaignId` and,
+ * from SDK 0.15.0, `campaignName` in `properties`.
+ */
 export type SystemEventPayload = EventRecord;
+
+/**
+ * Wire shape of a campaign touch as the native bridges send it. `kind` is `'shown'` or
+ * `'engaged'`; the public `CampaignTouch` type narrows it. Kept a plain string here so the
+ * codegen contract does not change if the SDK ever adds a kind.
+ */
+export type CampaignTouchPayload = {
+  campaignId: string;
+  campaignName: string;
+  kind: string;
+  atMs: number;
+};
 
 export type TriggeredEventCountStrategy = 'global' | 'session';
 
@@ -201,6 +217,12 @@ export interface Spec extends TurboModule {
    */
   unregisterGate(baseUrl: string): void;
   getRecentEvents(limit: number): Promise<EventRecord[]>;
+  /**
+   * The campaign the user was most recently touched by (shown, or completed) at most `withinMs`
+   * ago, or null. Never rejects for "not initialised" — that resolves null, as in the SDK.
+   * `withinMs` is clamped natively to [0, 30 days].
+   */
+  getLastCampaignTouch(withinMs: number): Promise<CampaignTouchPayload | null>;
   getDataSetSnapshot(type: DataSetType): Promise<DataSetSnapshot>;
   registerDeepLinkListener(): void;
   /**
@@ -214,6 +236,13 @@ export interface Spec extends TurboModule {
    * @param tag The language tag, or null to clear
    */
   setAppLanguage(tag: string | null): void;
+  /**
+   * Hand an incoming URL to the SDK. Returns true when the SDK recognised it as its own
+   * (a test-launch link) and took it over; false for any other URL, or when the SDK is not
+   * initialized.
+   * @param url The full incoming URL
+   */
+  handleUrl(url: string): boolean;
   /**
    * Set the log level at runtime.
    * @param level The log level to set

@@ -13,6 +13,7 @@ React Native TurboModule bridge for the Amply SDK. Enables event tracking, deepl
 | Debug/Logging | ✅ | Android, iOS |
 | Custom properties | ✅ | Android, iOS |
 | User identification | ✅ | Android, iOS |
+| Last campaign touch (attribution in your analytics) | ✅ | Android, iOS |
 
 ## Requirements
 
@@ -73,6 +74,46 @@ Amply.setCustomProperties({ plan: 'premium', onboarded: true });
 const unsubscribe = await Amply.addDeepLinkListener((event) => {
   console.log('Deeplink:', event.url);
 });
+```
+
+### Debug launch
+
+Amply can open a campaign on a real device from a link or QR code made in the dashboard, so you
+can click through it inside your app. The link uses your app's URL scheme, so the app has to pass
+incoming links to Amply:
+
+```typescript
+import {Linking} from 'react-native';
+import Amply from '@amplytools/react-native-amply-sdk';
+
+const forward = (url: string | null) => {
+  if (url && Amply.handleUrl(url)) {
+    return; // an Amply link: Amply took it, do not route it
+  }
+  // ...your own link handling
+};
+
+Linking.getInitialURL().then(forward);
+Linking.addEventListener('url', ({url}) => forward(url));
+```
+
+`handleUrl` returns `true` when Amply recognised the link as its own, and `false` for any other
+link (it never throws). It is fine to call it before `initialize` finishes, as on a cold start: an Amply link that arrives early is held (the newest one) and opened as soon as `initialize` succeeds; it is dropped if `initialize` fails. A
+campaign launched this way is not counted in statistics.
+
+With Expo Router, links are routed before your code sees them, so forward only from
+`app/+native-intent.tsx` (and do not also forward with `Linking` above). An Amply link reaches the
+SDK instead of the not-found screen, and every other link is routed as usual:
+
+```typescript
+import Amply from '@amplytools/react-native-amply-sdk';
+
+export function redirectSystemPath({path}: {path: string; initial: boolean}) {
+  if (Amply.handleUrl(path)) {
+    return '/'; // an Amply link: Amply took it
+  }
+  return path;
+}
 ```
 
 ### About the keys

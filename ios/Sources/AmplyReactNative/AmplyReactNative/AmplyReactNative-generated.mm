@@ -80,6 +80,10 @@ namespace facebook::react {
       return static_cast<ObjCTurboModule&>(turboModule).invokeObjCMethod(rt, PromiseKind, "getRecentEvents", @selector(getRecentEvents:resolve:reject:), args, count);
     }
 
+    static facebook::jsi::Value __hostFunction_NativeAmplyModuleSpecJSI_getLastCampaignTouch(facebook::jsi::Runtime& rt, TurboModule &turboModule, const facebook::jsi::Value* args, size_t count) {
+      return static_cast<ObjCTurboModule&>(turboModule).invokeObjCMethod(rt, PromiseKind, "getLastCampaignTouch", @selector(getLastCampaignTouch:resolve:reject:), args, count);
+    }
+
     static facebook::jsi::Value __hostFunction_NativeAmplyModuleSpecJSI_getDataSetSnapshot(facebook::jsi::Runtime& rt, TurboModule &turboModule, const facebook::jsi::Value* args, size_t count) {
       return static_cast<ObjCTurboModule&>(turboModule).invokeObjCMethod(rt, PromiseKind, "getDataSetSnapshot", @selector(getDataSetSnapshot:resolve:reject:), args, count);
     }
@@ -94,6 +98,10 @@ namespace facebook::react {
 
     static facebook::jsi::Value __hostFunction_NativeAmplyModuleSpecJSI_setAppLanguage(facebook::jsi::Runtime& rt, TurboModule &turboModule, const facebook::jsi::Value* args, size_t count) {
       return static_cast<ObjCTurboModule&>(turboModule).invokeObjCMethod(rt, VoidKind, "setAppLanguage", @selector(setAppLanguage:), args, count);
+    }
+
+    static facebook::jsi::Value __hostFunction_NativeAmplyModuleSpecJSI_handleUrl(facebook::jsi::Runtime& rt, TurboModule &turboModule, const facebook::jsi::Value* args, size_t count) {
+      return static_cast<ObjCTurboModule&>(turboModule).invokeObjCMethod(rt, BooleanKind, "handleUrl", @selector(handleUrl:), args, count);
     }
 
     static facebook::jsi::Value __hostFunction_NativeAmplyModuleSpecJSI_setLogLevel(facebook::jsi::Runtime& rt, TurboModule &turboModule, const facebook::jsi::Value* args, size_t count) {
@@ -155,6 +163,9 @@ namespace facebook::react {
         methodMap_["getRecentEvents"] = MethodMetadata {1, __hostFunction_NativeAmplyModuleSpecJSI_getRecentEvents};
         
         
+        methodMap_["getLastCampaignTouch"] = MethodMetadata {1, __hostFunction_NativeAmplyModuleSpecJSI_getLastCampaignTouch};
+        
+        
         methodMap_["getDataSetSnapshot"] = MethodMetadata {1, __hostFunction_NativeAmplyModuleSpecJSI_getDataSetSnapshot};
         
         
@@ -165,6 +176,9 @@ namespace facebook::react {
         
         
         methodMap_["setAppLanguage"] = MethodMetadata {1, __hostFunction_NativeAmplyModuleSpecJSI_setAppLanguage};
+        
+        
+        methodMap_["handleUrl"] = MethodMetadata {1, __hostFunction_NativeAmplyModuleSpecJSI_handleUrl};
         
         
         methodMap_["setLogLevel"] = MethodMetadata {1, __hostFunction_NativeAmplyModuleSpecJSI_setLogLevel};

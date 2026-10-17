@@ -42,6 +42,28 @@ describe('formatSystemEventLabel', () => {
       );
     });
 
+    it('names the campaign in CampaignShown when the SDK sends campaignName', () => {
+      const event = makeEvent('CampaignShown', {
+        campaignId: 'abc',
+        campaignName: 'Spring offer',
+        source: 'click',
+      });
+      expect(formatSystemEventLabel(event)).toBe(
+        'Campaign shown "Spring offer" (abc) via click',
+      );
+    });
+
+    it('ignores an empty campaignName in CampaignShown', () => {
+      const event = makeEvent('CampaignShown', {
+        campaignId: 'abc',
+        campaignName: '',
+        source: 'click',
+      });
+      expect(formatSystemEventLabel(event)).toBe(
+        'Campaign shown (abc) via click',
+      );
+    });
+
     it('formats EventTriggered with source event', () => {
       const event = makeEvent('EventTriggered', {sourceEvent: 'purchase'});
       expect(formatSystemEventLabel(event)).toBe('Event triggered (purchase)');
