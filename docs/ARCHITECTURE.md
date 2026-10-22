@@ -241,27 +241,29 @@ Both integration paths use the **same SDK code** but differ in **discovery and p
 
 **How it works:**
 
-1. **User adds plugin to `app.json`**
+1. **Linking needs no plugin.** Autolinking (`react-native.config.js`) registers the package
+   during `expo prebuild`, exactly as in bare React Native. The plugin entry is optional:
 
    ```json
    {
      "expo": {
-       "plugins": ["@amply/amply-react-native"]
+       "plugins": ["@amplytools/react-native-amply-sdk"]
      }
    }
    ```
 
-2. **Expo Config Plugin runs during `expo prebuild`**
+2. **Expo Config Plugin runs during `expo prebuild`** (only when listed)
 
-   The `withAmply.ts` plugin:
-   - Reads the generated `MainApplication.kt`
-   - Adds import: `import com.amply.reactnative.AmplyPackage`
-   - Adds registration: `add(AmplyPackage())` in the packages block
-   - Ensures idempotency (doesn't duplicate imports)
+   The `withAmply.ts` plugin handles built-in campaigns and nothing else:
+   - Copies `<projectRoot>/amply-bundle.android.json` to `android/app/src/main/assets/amply-bundle.json`
+   - Copies `<projectRoot>/amply-bundle.ios.json` to `ios/<Project>/amply-bundle.json` and adds it to
+     the app target's Copy Bundle Resources (once — a second prebuild adds nothing)
+   - Skips a platform whose file is absent, silently
+   - Never touches `MainApplication` (it did before 0.2.12; that caused duplicate registration)
 
 3. **Expo prebuild completes**
    - Merges autolinking config from `react-native.config.js`
-   - Merges plugin config from `withAmply`
+   - Applies the `withAmply` mods, if listed
    - Generates native code in `android/app/src/main/`
    - Runs codegen
    - Prepares Gradle for compilation
@@ -277,7 +279,7 @@ Both integration paths use the **same SDK code** but differ in **discovery and p
 | Scenario | Path |
 |----------|------|
 | Custom Gradle/Kotlin build | Bare RN (react-native.config.js only) |
-| Managed development (Expo CLI) | Expo (config plugin + react-native.config.js) |
+| Managed development (Expo CLI) | Expo (react-native.config.js; config plugin only for built-in campaigns) |
 | No native code edits planned | Expo (faster iteration) |
 | Custom native modules needed | Bare RN (full control) |
 
@@ -304,7 +306,7 @@ Both integration paths use the **same SDK code** but differ in **discovery and p
                ↓
              Expo reads app.json plugins
                ↓
-             withAmply plugin modifies MainApplication
+             withAmply copies built-in campaign bundles (if any)
                ↓
              Autolinking also applies (react-native.config.js)
                ↓

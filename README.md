@@ -27,7 +27,7 @@ React Native TurboModule bridge for the Amply SDK. Enables event tracking, deepl
 yarn add @amplytools/react-native-amply-sdk
 ```
 
-The SDK autolinks on both bare React Native and Expo — no `app.json` plugin entry, no manual `MainApplication` edits.
+The SDK autolinks on both bare React Native and Expo — no manual `MainApplication` edits, and no `app.json` plugin entry unless you use [built-in campaigns](#built-in-campaigns-expo).
 
 For Expo apps you may still need a rebuild after install:
 
@@ -36,7 +36,7 @@ npx expo prebuild --clean
 npx expo run:android   # or run:ios
 ```
 
-If you upgraded from v0.2.11 or earlier and have `"@amplytools/react-native-amply-sdk"` (or the historical `"@amply/amply-react-native"`) in your `plugins` array — remove it. The config plugin is now a no-op kept only for backward compatibility.
+If you upgraded from v0.2.11 or earlier and have the historical `"@amply/amply-react-native"` in your `plugins` array — remove it. An existing `"@amplytools/react-native-amply-sdk"` entry is harmless: the plugin does nothing unless the project has built-in campaign bundles.
 
 ## Quick Start
 
@@ -122,6 +122,38 @@ export function redirectSystemPath({path}: {path: string; initial: boolean}) {
 out of source control and inject it at build time, like the public key. If any of the three keys
 is missing or blank, `initialize` rejects with `AMP_INVALID_CONFIG`, logs which key is missing,
 and Amply stays off — every later call is a no-op. It never crashes your app.
+
+## Built-in campaigns (Expo)
+
+A campaign marked **Built-in** in Amply ships inside your app binary, so it can show on the very
+first launch, before the device has ever reached Amply.
+
+1. Add the plugin to `app.json`:
+
+   ```json
+   { "expo": { "plugins": ["@amplytools/react-native-amply-sdk"] } }
+   ```
+
+2. Pull the bundles with your applications' public API keys:
+
+   ```bash
+   npx @amplytools/cli bundle --android <android-public-key> --ios <ios-public-key>
+   ```
+
+   This writes `amply-bundle.android.json` and `amply-bundle.ios.json` next to `app.json`, plus
+   `amply.json` (the keys, no secrets) so later runs need no arguments. Commit all three, and
+   re-run the command before each release to pick up campaign changes.
+
+3. Rebuild the app: `npx expo prebuild`, then `npx expo run:android` / `run:ios` (EAS Build runs
+   prebuild for you).
+
+At prebuild the plugin copies the Android file to `android/app/src/main/assets/amply-bundle.json`
+and adds the iOS file to the app target as the resource `amply-bundle.json` — the only places the
+SDK looks. A platform without its file is left untouched.
+
+In a bare React Native project you do not need the plugin: the CLI writes into
+`android/app/src/main/assets/` and your iOS app folder directly. On iOS add that file to the app
+target once in Xcode; the CLI warns until you do.
 
 ## Documentation
 

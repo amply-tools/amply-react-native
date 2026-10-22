@@ -27,7 +27,7 @@ grep for both examples whether or not either one renders it.
 | Example | What it links | What it guards |
 |---|---|---|
 | `bare/` | JS linked locally; **both native halves resolved from the published artifacts** — Android via `tools.amply:sdk-android`, iOS via the `AmplySDK` pod | The release gate. `release.sh` builds this app on both platforms before any RN publish. It is the only sample in the family that compiles against published native artifacts on both platforms, and it must never be broken. |
-| `expo/` | The published npm package name, under Expo prebuild | That an integrator following the Expo path gets a working app — autolinking without a config-plugin entry (the SDK's plugin is a deliberate no-op since 0.2.12), and the `fmt` C++17 workaround re-applied to a Podfile `prebuild` regenerates. |
+| `expo/` | The published npm package name, under Expo prebuild | That an integrator following the Expo path gets a working app — autolinking without a config-plugin entry (the SDK's plugin only copies built-in campaign bundles, which this sample has none of), and the `fmt` C++17 workaround re-applied to a Podfile `prebuild` regenerates. |
 
 ## Parity check
 

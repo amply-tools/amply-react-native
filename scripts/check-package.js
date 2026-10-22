@@ -82,6 +82,14 @@ for (const file of packed) {
   }
 }
 
+// Tests and their fixtures stay out: `files` negates each __tests__ folder by path
+// (src/, dist/, plugin/src/), and a new one added without its negation would ship silently.
+for (const file of packed) {
+  if (file.split('/').includes('__tests__')) {
+    problems.push(`${file} is a test file — add its folder to the "!…/__tests__" entries in "files"`);
+  }
+}
+
 /**
  * `npm pack --dry-run --json`. The bare example's assembleDebug writes android/.cxx into the
  * package root, and with it present npm 11 dies with "Exit handler never called!" (measured
