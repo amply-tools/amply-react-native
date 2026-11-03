@@ -28,6 +28,8 @@ interface AmplyClient {
 
   suspend fun track(name: String, properties: Map<String, Any?>?)
 
+  suspend fun forwardEvent(source: String, name: String, properties: Map<String, Any?>?)
+
   /**
    * Gated form of track. Wraps the KMP `suspend fun trackGated(event, props): GateDecision`:
    * records the event, evaluates campaigns, and (if a gate action matched and a presenter

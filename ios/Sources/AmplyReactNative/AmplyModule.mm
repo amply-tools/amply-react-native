@@ -362,6 +362,56 @@ static BOOL AmplyIsBlank(NSString *value)
   }
 }
 
+- (void)forwardEvent:(JS::NativeAmplyModule::ForwardEventPayload &)payload
+            resolve:(RCTPromiseResolveBlock)resolve
+             reject:(RCTPromiseRejectBlock)reject
+{
+  if (!self.amplyInstance) {
+    if (reject) {
+      reject(@"AMP_NOT_INITIALIZED", @"Amply has not been initialized yet", nil);
+    }
+    return;
+  }
+
+  @try {
+    NSString *source = payload.source();
+    NSString *eventName = payload.name();
+
+    if (!source || source.length == 0) {
+      if (reject) {
+        reject(@"AMP_INVALID_EVENT", @"Event 'source' is required", nil);
+      }
+      return;
+    }
+    if (!eventName || eventName.length == 0) {
+      if (reject) {
+        reject(@"AMP_INVALID_EVENT", @"Event 'name' is required", nil);
+      }
+      return;
+    }
+
+    NSDictionary *properties = @{};
+    id<NSObject> propsObj = payload.properties();
+    if (propsObj && [propsObj isKindOfClass:[NSDictionary class]]) {
+      properties = (NSDictionary *)propsObj;
+    }
+
+    // KMP `trackForwarded(source, eventName, properties)` on the ASDKAmply facade.
+    [self.amplyInstance trackForwardedSource:source eventName:eventName properties:properties];
+
+    RCTLogInfo(@"[AmplyReactNative] Forwarded event: %@", eventName);
+
+    if (resolve) {
+      resolve(nil);
+    }
+  } @catch (NSException *exception) {
+    RCTLogError(@"[AmplyReactNative] Failed to forward event: %@", exception.reason);
+    if (reject) {
+      reject(@"AMP_TRACK_FAILED", exception.reason, nil);
+    }
+  }
+}
+
 // Maps the KMP GateDecision enum/sealed value to the JS-facing decision map:
 //   { outcome: "proceed", reason: "completed" | "failOpen" } | { outcome: "cancelled" }
 // The raw CampaignResult is never surfaced — the SDK collapses it into GateDecision.
@@ -839,7 +889,7 @@ static ASDKDataSetType *AmplyDataSetTypeFromDictionary(NSDictionary *type, NSStr
       return;
     }
 
-    RCTLogInfo(@"[AmplyReactNative] Got dataset snapshot: %@", snapshot);
+    RCTLogInfo(@"[AmplyReactNative] Got dataset snapshot, keys: %@", [snapshot allKeys]);
 
     if (resolve) {
       resolve(snapshot ?: @{});
@@ -1049,7 +1099,8 @@ static ASDKDataSetType *AmplyDataSetTypeFromDictionary(NSDictionary *type, NSStr
   // user before `initialize` resolves used to lose that id on iOS without a word.
   void (^apply)(ASDKAmply *) = ^(ASDKAmply *instance) {
     [instance setUserIdUserId:userId];
-    RCTLogInfo(@"[AmplyReactNative] User ID set to: %@", userId ?: @"<null>");
+    // No value: ids are often emails, and the Amplitude plugin calls this on every login.
+    RCTLogInfo(@"[AmplyReactNative] User ID %@", userId ? @"set" : @"cleared");
   };
 
   if (self.amplyInstance) {

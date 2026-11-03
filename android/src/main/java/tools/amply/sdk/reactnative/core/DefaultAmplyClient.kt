@@ -173,11 +173,20 @@ class DefaultAmplyClient(
   override suspend fun track(name: String, properties: Map<String, Any?>?) {
     val instance = requireInstance()
     withContext(Dispatchers.IO) {
-      android.util.Log.i(
-        "AmplyReactNative",
-        "Tracking event '$name' with properties=${properties?.filterValues { it != null }}"
-      )
+      android.util.Log.d("AmplyReactNative", "Tracking event '$name'")
       instance.track(name, properties?.toNonNullMap() ?: emptyMap())
+    }
+  }
+
+  override suspend fun forwardEvent(
+    source: String,
+    name: String,
+    properties: Map<String, Any?>?
+  ) {
+    val instance = requireInstance()
+    withContext(Dispatchers.IO) {
+      android.util.Log.d("AmplyReactNative", "Forwarding event '$name' from '$source'")
+      instance.trackForwarded(source, name, properties?.toNonNullMap() ?: emptyMap())
     }
   }
 
@@ -194,10 +203,7 @@ class DefaultAmplyClient(
       )
       return GateDecision.FAIL_OPEN
     }
-    android.util.Log.i(
-      "AmplyReactNative",
-      "trackGated('$name') with properties=${properties?.filterValues { it != null }}"
-    )
+    android.util.Log.d("AmplyReactNative", "trackGated('$name')")
     return try {
       // KMP: `suspend fun trackGated(event, props): GateDecision`. The bridge collapses
       // the raw decision into its own GateDecision; the CampaignResult never surfaces here.
@@ -400,7 +406,8 @@ class DefaultAmplyClient(
       val instance = amplyInstance
       if (instance != null) {
         instance.setUserId(userId)
-        android.util.Log.i("AmplyReactNative", "User ID set to: ${userId ?: "<null>"}")
+        // No value: ids are often emails, and the Amplitude plugin calls this on every login.
+        android.util.Log.d("AmplyReactNative", "User ID ${if (userId == null) "cleared" else "set"}")
       } else {
         android.util.Log.i("AmplyReactNative", "Buffering setUserId until init")
         pendingPropertyOps.add { it.setUserId(userId) }

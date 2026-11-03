@@ -5,6 +5,7 @@
     "paths": {
       "@amply/sample-shared": ["../shared/src/index.ts"],
       "@amplytools/react-native-amply-sdk": ["../../src/index.ts"],
+      "@amplytools/react-native-amply-sdk/amplitude": ["../../src/amplitudePlugin.ts"],
       "@react-native-async-storage/async-storage": [
         "./node_modules/@react-native-async-storage/async-storage"
       ],

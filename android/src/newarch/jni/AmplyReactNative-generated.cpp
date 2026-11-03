@@ -27,6 +27,11 @@ static facebook::jsi::Value __hostFunction_NativeAmplyModuleSpecJSI_track(facebo
   return static_cast<JavaTurboModule &>(turboModule).invokeJavaMethod(rt, PromiseKind, "track", "(Lcom/facebook/react/bridge/ReadableMap;Lcom/facebook/react/bridge/Promise;)V", args, count, cachedMethodId);
 }
 
+static facebook::jsi::Value __hostFunction_NativeAmplyModuleSpecJSI_forwardEvent(facebook::jsi::Runtime& rt, TurboModule &turboModule, const facebook::jsi::Value* args, size_t count) {
+  static jmethodID cachedMethodId = nullptr;
+  return static_cast<JavaTurboModule &>(turboModule).invokeJavaMethod(rt, PromiseKind, "forwardEvent", "(Lcom/facebook/react/bridge/ReadableMap;Lcom/facebook/react/bridge/Promise;)V", args, count, cachedMethodId);
+}
+
 static facebook::jsi::Value __hostFunction_NativeAmplyModuleSpecJSI_trackGated(facebook::jsi::Runtime& rt, TurboModule &turboModule, const facebook::jsi::Value* args, size_t count) {
   static jmethodID cachedMethodId = nullptr;
   return static_cast<JavaTurboModule &>(turboModule).invokeJavaMethod(rt, PromiseKind, "trackGated", "(Ljava/lang/String;Lcom/facebook/react/bridge/ReadableMap;Lcom/facebook/react/bridge/Promise;)V", args, count, cachedMethodId);
@@ -127,6 +132,7 @@ NativeAmplyModuleSpecJSI::NativeAmplyModuleSpecJSI(const JavaTurboModule::InitPa
   methodMap_["initialize"] = MethodMetadata {1, __hostFunction_NativeAmplyModuleSpecJSI_initialize};
   methodMap_["isInitialized"] = MethodMetadata {0, __hostFunction_NativeAmplyModuleSpecJSI_isInitialized};
   methodMap_["track"] = MethodMetadata {1, __hostFunction_NativeAmplyModuleSpecJSI_track};
+  methodMap_["forwardEvent"] = MethodMetadata {1, __hostFunction_NativeAmplyModuleSpecJSI_forwardEvent};
   methodMap_["trackGated"] = MethodMetadata {2, __hostFunction_NativeAmplyModuleSpecJSI_trackGated};
   methodMap_["resolveCampaign"] = MethodMetadata {2, __hostFunction_NativeAmplyModuleSpecJSI_resolveCampaign};
   methodMap_["registerGate"] = MethodMetadata {3, __hostFunction_NativeAmplyModuleSpecJSI_registerGate};

@@ -96,6 +96,30 @@ class AmplyModule(reactContext: ReactApplicationContext) :
     }
   }
 
+  override fun forwardEvent(payload: ReadableMap, promise: Promise) {
+    val source = payload.getString("source")
+    if (source.isNullOrBlank()) {
+      promise.reject(ARGUMENT_ERROR, "Event 'source' is required")
+      return
+    }
+    val name = payload.getString("name")
+    if (name.isNullOrBlank()) {
+      promise.reject(ARGUMENT_ERROR, "Event 'name' is required")
+      return
+    }
+
+    val properties = payload.getMap("properties")?.toHashMap()
+
+    scope.launch {
+      try {
+        client.forwardEvent(source, name, properties)
+        promise.resolve(null)
+      } catch (throwable: Throwable) {
+        promise.reject(TRACK_ERROR, throwable)
+      }
+    }
+  }
+
   override fun trackGated(event: String, properties: ReadableMap, promise: Promise) {
     if (event.isBlank()) {
       // The JS contract is "trackGated never rejects" — fail open instead.

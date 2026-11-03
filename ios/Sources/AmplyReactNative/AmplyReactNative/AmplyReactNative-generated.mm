@@ -46,6 +46,12 @@
   return facebook::react::managedPointer<JS::NativeAmplyModule::TrackEventPayload>(json);
 }
 @end
+@implementation RCTCxxConvert (NativeAmplyModule_ForwardEventPayload)
++ (RCTManagedPointer *)JS_NativeAmplyModule_ForwardEventPayload:(id)json
+{
+  return facebook::react::managedPointer<JS::NativeAmplyModule::ForwardEventPayload>(json);
+}
+@end
 namespace facebook::react {
   
     static facebook::jsi::Value __hostFunction_NativeAmplyModuleSpecJSI_initialize(facebook::jsi::Runtime& rt, TurboModule &turboModule, const facebook::jsi::Value* args, size_t count) {
@@ -58,6 +64,10 @@ namespace facebook::react {
 
     static facebook::jsi::Value __hostFunction_NativeAmplyModuleSpecJSI_track(facebook::jsi::Runtime& rt, TurboModule &turboModule, const facebook::jsi::Value* args, size_t count) {
       return static_cast<ObjCTurboModule&>(turboModule).invokeObjCMethod(rt, PromiseKind, "track", @selector(track:resolve:reject:), args, count);
+    }
+
+    static facebook::jsi::Value __hostFunction_NativeAmplyModuleSpecJSI_forwardEvent(facebook::jsi::Runtime& rt, TurboModule &turboModule, const facebook::jsi::Value* args, size_t count) {
+      return static_cast<ObjCTurboModule&>(turboModule).invokeObjCMethod(rt, PromiseKind, "forwardEvent", @selector(forwardEvent:resolve:reject:), args, count);
     }
 
     static facebook::jsi::Value __hostFunction_NativeAmplyModuleSpecJSI_trackGated(facebook::jsi::Runtime& rt, TurboModule &turboModule, const facebook::jsi::Value* args, size_t count) {
@@ -147,6 +157,9 @@ namespace facebook::react {
         
         methodMap_["track"] = MethodMetadata {1, __hostFunction_NativeAmplyModuleSpecJSI_track};
         setMethodArgConversionSelector(@"track", 0, @"JS_NativeAmplyModule_TrackEventPayload:");
+        
+        methodMap_["forwardEvent"] = MethodMetadata {1, __hostFunction_NativeAmplyModuleSpecJSI_forwardEvent};
+        setMethodArgConversionSelector(@"forwardEvent", 0, @"JS_NativeAmplyModule_ForwardEventPayload:");
         
         methodMap_["trackGated"] = MethodMetadata {2, __hostFunction_NativeAmplyModuleSpecJSI_trackGated};
         

@@ -61,6 +61,12 @@ export type TrackEventPayload = {
   properties?: JsonMap | null;
 };
 
+export type ForwardEventPayload = {
+  source: string;
+  name: string;
+  properties?: JsonMap | null;
+};
+
 export type EventRecord = {
   id?: string | null;
   name: string;
@@ -176,6 +182,11 @@ export interface Spec extends TurboModule {
   initialize(config: AmplyInitializationConfig): Promise<void>;
   isInitialized(): boolean;
   track(payload: TrackEventPayload): Promise<void>;
+  /**
+   * Records an event that originated in another analytics SDK (e.g. Amplitude). Same shape as
+   * track plus the `source`, which is only logged and never reaches the wire.
+   */
+  forwardEvent(payload: ForwardEventPayload): Promise<void>;
   /**
    * Gated form of track: records the event, evaluates campaigns, and — if a gate
    * action matches and a presenter is registered — dispatches the gate presentation

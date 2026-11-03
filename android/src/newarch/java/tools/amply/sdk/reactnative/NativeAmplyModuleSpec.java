@@ -60,6 +60,10 @@ public abstract class NativeAmplyModuleSpec extends ReactContextBaseJavaModule i
 
   @ReactMethod
   @DoNotStrip
+  public abstract void forwardEvent(ReadableMap payload, Promise promise);
+
+  @ReactMethod
+  @DoNotStrip
   public abstract void trackGated(String event, ReadableMap properties, Promise promise);
 
   @ReactMethod

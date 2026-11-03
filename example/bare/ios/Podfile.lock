@@ -1,10 +1,12 @@
 PODS:
+  - amplitude-react-native (1.13.0):
+    - React-Core
   - AmplyReactNative (0.1.0):
-    - AmplySDK (~> 0.16.0)
+    - AmplySDK (~> 0.17.0)
     - React-Core
     - React-RCTFabric
     - ReactCommon/turbomodule/core
-  - AmplySDK (0.16.0)
+  - AmplySDK (0.17.0)
   - boost (1.84.0)
   - DoubleConversion (1.1.6)
   - fast_float (8.0.0)
@@ -2465,6 +2467,7 @@ PODS:
   - Yoga (0.0.0)
 
 DEPENDENCIES:
+  - "amplitude-react-native (from `../node_modules/@amplitude/analytics-react-native`)"
   - AmplyReactNative (from `../../..`)
   - boost (from `../node_modules/react-native/third-party-podspecs/boost.podspec`)
   - DoubleConversion (from `../node_modules/react-native/third-party-podspecs/DoubleConversion.podspec`)
@@ -2550,6 +2553,8 @@ SPEC REPOS:
     - SocketRocket
 
 EXTERNAL SOURCES:
+  amplitude-react-native:
+    :path: "../node_modules/@amplitude/analytics-react-native"
   AmplyReactNative:
     :path: "../../.."
   boost:
@@ -2705,8 +2710,9 @@ EXTERNAL SOURCES:
     :path: "../node_modules/react-native/ReactCommon/yoga"
 
 SPEC CHECKSUMS:
-  AmplyReactNative: 4b791bd219529ea49b5e9a97cbb9ae8c781d5383
-  AmplySDK: 2ba0607fb31a019d90ce4f7ca1a16a036cfd1dab
+  amplitude-react-native: 456e34c57f8b3f4cc572f7d5e4219077639c5f37
+  AmplyReactNative: 2b6ade5d7aec3412264d07062325f1eeb6a1c5c6
+  AmplySDK: 74e826a89074aee69245392cef476ee49802e925
   boost: 7e761d76ca2ce687f7cc98e698152abd03a18f90
   DoubleConversion: cb417026b2400c8f53ae97020b2be961b59470cb
   fast_float: b32c788ed9c6a8c584d114d0047beda9664e7cc6

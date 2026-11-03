@@ -6,6 +6,7 @@ export type {FormatOptions} from './systemEventUtils';
 import {assertValidWithinMs, toCampaignTouch} from './campaignTouch';
 import type {CampaignTouch} from './campaignTouch';
 export type {CampaignTouch, CampaignTouchKind} from './campaignTouch';
+import {emitSdkSignal} from './sdkSignals';
 import type {
   CampaignResult,
   GateDecision,
@@ -17,6 +18,7 @@ import type {
   LogLevel,
   CampaignPresentEvent,
   TrackEventPayload,
+  ForwardEventPayload,
 } from './nativeSpecs/NativeAmplyModule';
 
 /**
@@ -260,6 +262,7 @@ export async function initialize(config: AmplyInitializationConfig): Promise<voi
   flushParkedDebugUrl();
   // Anything the host registered before this point was parked rather than lost.
   replayPendingRegistrations();
+  emitSdkSignal('initialized');
 }
 
 /**
@@ -433,6 +436,7 @@ export function handleUrl(url: string): boolean {
  */
 export function setUserId(userId: string | null): void {
   getNativeModule().setUserId(userId);
+  emitSdkSignal('user-id-set');
 }
 
 /**
@@ -468,6 +472,14 @@ export function isInitialized(): boolean {
  */
 export async function track(payload: TrackEventPayload): Promise<void> {
   await getNativeModule().track(payload);
+}
+
+/**
+ * Records an event that originated in another analytics SDK. Used by the analytics plugins;
+ * `source` names the origin and is only logged. Rejects when the SDK is not initialized.
+ */
+export async function forwardEvent(payload: ForwardEventPayload): Promise<void> {
+  await getNativeModule().forwardEvent(payload);
 }
 
 /**
@@ -835,6 +847,7 @@ export type {
   LogLevel,
   CampaignPresentEvent,
   TrackEventPayload,
+  ForwardEventPayload,
 };
 
 export function addSystemEventsListener(
@@ -851,6 +864,7 @@ export default {
   initialize,
   isInitialized,
   track,
+  forwardEvent,
   trackEvent,
   trackGated,
   registerGate,

@@ -72,6 +72,23 @@ namespace JS {
 @interface RCTCxxConvert (NativeAmplyModule_TrackEventPayload)
 + (RCTManagedPointer *)JS_NativeAmplyModule_TrackEventPayload:(id)json;
 @end
+namespace JS {
+  namespace NativeAmplyModule {
+    struct ForwardEventPayload {
+      NSString *source() const;
+      NSString *name() const;
+      id<NSObject> _Nullable properties() const;
+
+      ForwardEventPayload(NSDictionary *const v) : _v(v) {}
+    private:
+      NSDictionary *_v;
+    };
+  }
+}
+
+@interface RCTCxxConvert (NativeAmplyModule_ForwardEventPayload)
++ (RCTManagedPointer *)JS_NativeAmplyModule_ForwardEventPayload:(id)json;
+@end
 @protocol NativeAmplyModuleSpec <RCTBridgeModule, RCTTurboModule>
 
 - (void)initialize:(JS::NativeAmplyModule::AmplyInitializationConfig &)config
@@ -81,6 +98,9 @@ namespace JS {
 - (void)track:(JS::NativeAmplyModule::TrackEventPayload &)payload
       resolve:(RCTPromiseResolveBlock)resolve
        reject:(RCTPromiseRejectBlock)reject;
+- (void)forwardEvent:(JS::NativeAmplyModule::ForwardEventPayload &)payload
+             resolve:(RCTPromiseResolveBlock)resolve
+              reject:(RCTPromiseRejectBlock)reject;
 - (void)trackGated:(NSString *)event
         properties:(NSDictionary *)properties
            resolve:(RCTPromiseResolveBlock)resolve
@@ -193,6 +213,21 @@ inline NSString *JS::NativeAmplyModule::TrackEventPayload::name() const
   return RCTBridgingToString(p);
 }
 inline id<NSObject> _Nullable JS::NativeAmplyModule::TrackEventPayload::properties() const
+{
+  id const p = _v[@"properties"];
+  return p;
+}
+inline NSString *JS::NativeAmplyModule::ForwardEventPayload::source() const
+{
+  id const p = _v[@"source"];
+  return RCTBridgingToString(p);
+}
+inline NSString *JS::NativeAmplyModule::ForwardEventPayload::name() const
+{
+  id const p = _v[@"name"];
+  return RCTBridgingToString(p);
+}
+inline id<NSObject> _Nullable JS::NativeAmplyModule::ForwardEventPayload::properties() const
 {
   id const p = _v[@"properties"];
   return p;

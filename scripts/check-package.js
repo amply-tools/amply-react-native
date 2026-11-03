@@ -39,7 +39,16 @@ const shipped = new Set(packed);
 
 const problems = [];
 
+// A subpath entry is a folder with its own package.json, pointing back into dist/ and src/.
+const subpath = JSON.parse(fs.readFileSync('amplitude/package.json', 'utf8'));
+const subpathFile = (entry) => entry && path.posix.normalize(`amplitude/${entry}`);
+
 const entries = {
+  'amplitude/package.json': shipped.has('amplitude/package.json') ? undefined : 'amplitude/package.json',
+  'amplitude main': subpathFile(subpath.main),
+  'amplitude module': subpathFile(subpath.module),
+  'amplitude react-native': subpathFile(subpath['react-native']),
+  'amplitude types': subpathFile(subpath.types),
   main: pkg.main,
   types: pkg.types,
   'react-native': pkg['react-native'],

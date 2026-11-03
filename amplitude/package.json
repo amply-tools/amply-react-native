@@ -1,0 +1,6 @@
+{
+  "main": "../dist/cjs/amplitudePlugin.js",
+  "module": "../dist/src/amplitudePlugin.js",
+  "react-native": "../src/amplitudePlugin.ts",
+  "types": "../dist/src/amplitudePlugin.d.ts"
+}
