@@ -70,11 +70,16 @@ Amply.setAppLanguage('pt_BR'); // e.g. i18next's i18n.language
 // Set custom properties for targeting
 Amply.setCustomProperties({ plan: 'premium', onboarded: true });
 
-// Listen for campaign deeplinks
+// Observe campaign deeplinks (campaign id, name and trigger in event.info)
 const unsubscribe = await Amply.addDeepLinkListener((event) => {
-  console.log('Deeplink:', event.url);
+  analytics.track('Amply link', { url: event.url, campaign: event.info.campaignId });
 });
 ```
+
+The deeplink listener is an observer, on both platforms. Amply opens the link itself, from a
+DeepLink campaign and from a mini-app button alike, and your app receives it through `Linking`
+like any other link. Route in one place, your `Linking` handler or router. Do not call
+`Linking.openURL(event.url)` or navigate from the listener, or the link is handled twice.
 
 ### Debug launch
 

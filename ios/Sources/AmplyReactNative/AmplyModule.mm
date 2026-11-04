@@ -944,20 +944,16 @@ static ASDKDataSetType *AmplyDataSetTypeFromDictionary(NSDictionary *type, NSStr
 #pragma mark - ASDKDeepLinkListener
 
 /**
- * Called by KMP SDK when a campaign triggers a deep link action.
+ * Called by KMP SDK when a campaign — a DeepLink campaign or a mini-app button — opens a link.
  *
- * @param url  The deep link URL configured in the campaign
- * @param info Campaign metadata (may include campaign ID, action data, etc.)
- * @return YES if the deep link was fully handled (SDK won't open URL via system)
- *         NO  to let SDK also open the URL via UIApplication.openURL()
+ * The listener is an observer, exactly as on Android and as `Amply.addDeepLinkListener` is
+ * documented: it hands the link and its campaign `info` to JS and returns NO, so the SDK still
+ * opens the URL through the system (`UIApplication open:options:completionHandler:`) and the app
+ * receives it through `Linking` like any other link.
  *
- * Current implementation:
- * 1. Emits event to JS via Amply.addDeepLinkListener() for custom handling/logging
- * 2. Opens URL using modern UIApplication.open(_:options:completionHandler:) API
- * 3. Returns YES to prevent SDK from using deprecated UIApplication.openURL()
- *
- * Note: KMP SDK uses deprecated UIApplication.openURL() which returns NO on iOS 18+,
- * so we handle URL opening ourselves using the modern API.
+ * It used to return YES and open only http/https itself, on the belief that the SDK used the
+ * deprecated `openURL:`. The SDK has long used the modern call; returning YES meant an app that
+ * merely subscribed for attribution silently lost every link to its own scheme.
  */
 - (BOOL)onDeepLinkUrl:(NSString *)url info:(NSDictionary<NSString *, id> *)info
 {
@@ -975,27 +971,7 @@ static ASDKDataSetType *AmplyDataSetTypeFromDictionary(NSDictionary *type, NSStr
   }
   os_unfair_lock_unlock(&_emitLock);
 
-  // For custom scheme URLs (e.g., amply://), let JS handle navigation via the event above.
-  // For external URLs (http/https), open via system.
-  NSURL *nsUrl = [NSURL URLWithString:url];
-  if (nsUrl) {
-    NSString *scheme = nsUrl.scheme.lowercaseString;
-    BOOL isExternalUrl = [scheme isEqualToString:@"http"] || [scheme isEqualToString:@"https"];
-
-    if (isExternalUrl) {
-      dispatch_async(dispatch_get_main_queue(), ^{
-        [[UIApplication sharedApplication] openURL:nsUrl
-                                           options:@{}
-                                 completionHandler:^(BOOL success) {
-          if (!success) {
-            RCTLogWarn(@"[AmplyReactNative] Failed to open URL: %@", url);
-          }
-        }];
-      });
-    }
-  }
-
-  return YES; // Tell SDK we handled it
+  return NO; // Observer only: the SDK opens the URL.
 }
 
 - (void)setCustomProperties:(NSDictionary *)properties

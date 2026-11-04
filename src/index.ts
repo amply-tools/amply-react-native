@@ -750,6 +750,11 @@ export async function getDataSetSnapshot(type: DataSetType): Promise<DataSetSnap
   return getNativeModule().getDataSetSnapshot(type);
 }
 
+/**
+ * Observes the links Amply opens — from DeepLink campaigns and mini-app buttons — with their
+ * campaign context in `event.info`. An observer only, on both platforms: Amply still opens the link,
+ * and the app receives it through `Linking`. Route there, not here, or the link is handled twice.
+ */
 export async function addDeepLinkListener(
   listener: (event: DeepLinkEvent) => void
 ): Promise<() => void> {
