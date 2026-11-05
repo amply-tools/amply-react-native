@@ -19,7 +19,8 @@ React Native TurboModule bridge for the Amply SDK. Enables event tracking, deepl
 
 - React Native >= 0.79 (New Architecture enabled)
 - Expo SDK >= 53 (for Expo apps)
-- Android API 24+ / iOS 13.0+
+- Android API 24+ / iOS 15.1+
+- iOS: static linking (the Expo default, or `use_frameworks! :linkage => :static`)
 
 ## Installation
 
@@ -35,6 +36,17 @@ For Expo apps you may still need a rebuild after install:
 npx expo prebuild --clean
 npx expo run:android   # or run:ios
 ```
+
+### iOS: where the native SDK comes from
+
+The native `AmplySDK` framework arrives as the Swift package [`amply-sdk-ios`](https://github.com/amply-tools/amply-sdk-ios), which React Native attaches during `pod install` (its built-in `spm_dependency`). There is nothing to add to your `Podfile`, and each version of this package pins the exact native version it was tested with.
+
+- **Do not add `AmplySDK` yourself** — as a pod or a Swift package. This package already brings the version it was tested with; a second source competes with it, and which version the app then links is up to the linker.
+- **Static linking only.** The default React Native and Expo setups, and `use_frameworks! :linkage => :static` (`"useFrameworks": "static"` in `expo-build-properties`), all work. A dynamic-framework build stops with a compile error naming the setting.
+- **The first iOS build downloads the framework** (about 24 MB) from `github.com` and `release-assets.githubusercontent.com`; later builds use Xcode's package cache. EAS Build and hosted CI have that access. A CI that blocks outbound traffic needs both hosts allowed, or a cache of Xcode's package directory (`xcodebuild -clonedSourcePackagesDirPath <dir>`).
+- **Archives (EAS Build, Xcode Organizer) need nothing extra.** The pod adds a build phase, `[Amply] Remove duplicate AmplySDK archive signature`, that works around an Xcode archive error with Swift packages used by pods ("AmplySDK.xcframework-ios.signature couldn't be copied to Signatures"). It does nothing in ordinary builds.
+- **React Native's Swift Package Manager mode** (RN 0.87+, `npx react-native spm`, the default from RN 0.89) is supported too: the package ships `ios/Package.swift`, which the SPM autolinker picks up on its own and which pins the same native version. It uses React Native's default local mode; the remote React package mode (`RN_SPM_REMOTE_URL`) is not supported yet.
+- **Upgrading from 0.17.x or earlier**, where the framework came from CocoaPods: run `pod install` (or `npx expo prebuild --clean`). The `AmplySDK` pod leaves `Podfile.lock` on its own.
 
 If you upgraded from v0.2.11 or earlier and have the historical `"@amply/amply-react-native"` in your `plugins` array — remove it. An existing `"@amplytools/react-native-amply-sdk"` entry is harmless: the plugin does nothing unless the project has built-in campaign bundles.
 

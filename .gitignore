@@ -2,6 +2,10 @@ node_modules
 build
 android/build
 ios/build
+# SwiftPM outputs next to ios/Package.swift (Xcode, sourcekit-lsp, swift build)
+ios/.build/
+ios/.swiftpm/
+ios/Package.resolved
 dist
 *.log
 .vscode

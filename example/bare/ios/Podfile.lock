@@ -1,12 +1,10 @@
 PODS:
   - amplitude-react-native (1.13.0):
     - React-Core
-  - AmplyReactNative (0.1.0):
-    - AmplySDK (~> 0.17.0)
+  - AmplyReactNative (0.18.0):
     - React-Core
     - React-RCTFabric
     - ReactCommon/turbomodule/core
-  - AmplySDK (0.17.0)
   - boost (1.84.0)
   - DoubleConversion (1.1.6)
   - fast_float (8.0.0)
@@ -2549,7 +2547,6 @@ DEPENDENCIES:
 
 SPEC REPOS:
   trunk:
-    - AmplySDK
     - SocketRocket
 
 EXTERNAL SOURCES:
@@ -2711,8 +2708,7 @@ EXTERNAL SOURCES:
 
 SPEC CHECKSUMS:
   amplitude-react-native: 456e34c57f8b3f4cc572f7d5e4219077639c5f37
-  AmplyReactNative: 2b6ade5d7aec3412264d07062325f1eeb6a1c5c6
-  AmplySDK: 74e826a89074aee69245392cef476ee49802e925
+  AmplyReactNative: c61b2986d1c624ad3dcd9bfecc81cd2992170de3
   boost: 7e761d76ca2ce687f7cc98e698152abd03a18f90
   DoubleConversion: cb417026b2400c8f53ae97020b2be961b59470cb
   fast_float: b32c788ed9c6a8c584d114d0047beda9664e7cc6

@@ -4,6 +4,10 @@
 android/build/
 android/.cxx/
 ios/build/
+# SwiftPM outputs next to ios/Package.swift (Xcode, sourcekit-lsp, swift build)
+ios/.build/
+ios/.swiftpm/
+ios/Package.resolved
 
 # Defense-in-depth: release.sh strips CLAUDE.md before publishing, but list
 # it here too so a direct `npm publish` from main never leaks it.

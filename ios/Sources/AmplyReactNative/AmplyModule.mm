@@ -13,6 +13,12 @@
 // Import the KMP SDK
 #import <AmplySDK/AmplySDK.h>
 
+// AmplySDK comes from its Swift package as a static framework that the app binary links (see the
+// podspec). A dynamic AmplyReactNative.framework would carry a second copy of it.
+#if defined(AMPLY_RN_MACH_O_mh_dylib)
+#error "AmplyReactNative must be built as a static library or static framework. Dynamic frameworks (use_frameworks! :linkage => :dynamic, or ios.useFrameworks \"dynamic\" in Expo) are not supported: they would put two copies of AmplySDK in the app."
+#endif
+
 using namespace facebook::react;
 
 /// Mirrors DefaultAmplyClient.DEFAULT_GATE_TIMEOUT_MS on the Android bridge. Both exist because
