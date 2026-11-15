@@ -16,6 +16,8 @@ const mockNativeModule = {
   getCustomProperty: jest.fn(),
   removeCustomProperty: jest.fn(),
   clearCustomProperties: jest.fn(),
+  addToCustomPropertySet: jest.fn(),
+  removeFromCustomPropertySet: jest.fn(),
 };
 
 describe('Amply JS API', () => {
@@ -238,6 +240,137 @@ describe('Amply JS API', () => {
     Amply.clearCustomProperties();
 
     expect(mockNativeModule.clearCustomProperties).toHaveBeenCalled();
+  });
+
+  // String sets: the native SDK owns normalisation and the limits (100 items, 255 characters,
+  // 16 KB; 25 items for event params). JS only keeps values that are not lists of strings from
+  // crossing the bridge, where each platform would turn them into something different.
+  describe('string sets', () => {
+    let debug: jest.SpyInstance;
+
+    beforeEach(() => {
+      debug = jest.spyOn(console, 'debug').mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+      debug.mockRestore();
+    });
+
+    it('sets a list of strings as a single custom property', () => {
+      Amply.setCustomProperty('tags', ['a', 'b']);
+
+      expect(mockNativeModule.setCustomProperties).toHaveBeenCalledWith({ tags: ['a', 'b'] });
+    });
+
+    it('passes an empty list through: an empty set is a value, not "unset"', () => {
+      Amply.setCustomProperty('tags', []);
+
+      expect(mockNativeModule.setCustomProperties).toHaveBeenCalledWith({ tags: [] });
+    });
+
+    it('leaves the limits to the native SDK', () => {
+      const items = Array.from({ length: 101 }, (_, index) => `item-${index}`);
+
+      Amply.setCustomProperty('tags', items);
+
+      expect(mockNativeModule.setCustomProperties).toHaveBeenCalledWith({ tags: items });
+    });
+
+    it('sets lists next to scalars in one setCustomProperties call', () => {
+      Amply.setCustomProperties({ plan: 'pro', tags: ['a', 'b'], level: 3 });
+
+      expect(mockNativeModule.setCustomProperties).toHaveBeenCalledWith({
+        plan: 'pro',
+        tags: ['a', 'b'],
+        level: 3,
+      });
+    });
+
+    it.each([
+      ['a number', ['a', 1]],
+      ['null', ['a', null]],
+      ['a nested list', ['a', ['b']]],
+      ['an object', ['a', { b: 'c' }]],
+    ])('drops a list holding %s without calling native, with a debug line naming the key', (_label, value) => {
+      Amply.setCustomProperty('tags', value as never);
+
+      expect(mockNativeModule.setCustomProperties).not.toHaveBeenCalled();
+      expect(debug).toHaveBeenCalledWith(expect.stringContaining('tags'));
+    });
+
+    it('drops only the invalid list from setCustomProperties and sends the rest', () => {
+      Amply.setCustomProperties({ plan: 'pro', tags: ['a', 2] as never, ok: ['x'] });
+
+      expect(mockNativeModule.setCustomProperties).toHaveBeenCalledWith({ plan: 'pro', ok: ['x'] });
+      expect(debug).toHaveBeenCalledWith(expect.stringContaining('tags'));
+    });
+
+    it('does not call native when every value in setCustomProperties was dropped', () => {
+      Amply.setCustomProperties({ tags: [false] as never });
+
+      expect(mockNativeModule.setCustomProperties).not.toHaveBeenCalled();
+    });
+
+    it("leaves the caller's object as it was when it drops a value", () => {
+      const properties = { plan: 'pro', tags: ['a', 2] as never };
+
+      Amply.setCustomProperties(properties);
+
+      expect(properties).toEqual({ plan: 'pro', tags: ['a', 2] });
+    });
+
+    it('reads a set back as a list', async () => {
+      mockNativeModule.getCustomProperty.mockResolvedValueOnce({ value: ['a', 'b'] });
+
+      const result = await Amply.getCustomProperty('tags');
+
+      expect(result).toEqual(['a', 'b']);
+    });
+
+    it.each([
+      ['addToCustomPropertySet', Amply.addToCustomPropertySet],
+      ['removeFromCustomPropertySet', Amply.removeFromCustomPropertySet],
+    ] as const)('%s passes the key and the items to native', (name, mutate) => {
+      mutate('tags', ['a', 'b']);
+
+      expect(mockNativeModule[name]).toHaveBeenCalledWith('tags', ['a', 'b']);
+    });
+
+    it.each([
+      ['addToCustomPropertySet', Amply.addToCustomPropertySet],
+      ['removeFromCustomPropertySet', Amply.removeFromCustomPropertySet],
+    ] as const)('%s drops items that are not all strings, with a debug line naming the key', (name, mutate) => {
+      mutate('tags', ['a', 7] as never);
+
+      expect(mockNativeModule[name]).not.toHaveBeenCalled();
+      expect(debug).toHaveBeenCalledWith(expect.stringContaining('tags'));
+    });
+
+    it.each([
+      ['addToCustomPropertySet', Amply.addToCustomPropertySet],
+      ['removeFromCustomPropertySet', Amply.removeFromCustomPropertySet],
+    ] as const)('%s drops a value that is not a list at all', (name, mutate) => {
+      mutate('tags', 'a' as never);
+
+      expect(mockNativeModule[name]).not.toHaveBeenCalled();
+      expect(debug).toHaveBeenCalledWith(expect.stringContaining('tags'));
+    });
+
+    it('exposes both mutations on the default export', () => {
+      expect(typeof Amply.default.addToCustomPropertySet).toBe('function');
+      expect(typeof Amply.default.removeFromCustomPropertySet).toBe('function');
+      expect(Amply.default.addToCustomPropertySet).toBe(Amply.addToCustomPropertySet);
+      expect(Amply.default.removeFromCustomPropertySet).toBe(Amply.removeFromCustomPropertySet);
+    });
+
+    it('passes a string list in trackEvent params through unchanged', async () => {
+      await Amply.trackEvent('Purchase', { sku: 'A', tags: ['sale', 'new'] });
+
+      expect(mockNativeModule.track).toHaveBeenCalledWith({
+        name: 'Purchase',
+        properties: { sku: 'A', tags: ['sale', 'new'] },
+      });
+    });
   });
 
   it('registers deep links once and subscribes via the TurboModule emitter', async () => {

@@ -24,7 +24,7 @@ This document provides a comprehensive overview of the Amply React Native SDK's 
 The Amply React Native SDK is a **TurboModule bridge** that connects React Native applications to the **Amply Kotlin Multiplatform (KMP) SDK**. It enables:
 
 - **Event tracking** – Custom and system event collection
-- **Custom properties** – Persistent user attributes (string, number, boolean)
+- **Custom properties** – Persistent user attributes (string, number, boolean, string[] sets)
 - **Deeplink campaign handling** – Parse and respond to deep link campaigns
 - **Real-time data access** – Query device, user, and session datasets
 - **Event inspection** – Retrieve recent tracked events for debugging
@@ -158,6 +158,8 @@ export interface Spec extends TurboModule {
   getLogLevel(): string;
   setCustomProperties(properties: JsonMap): void;
   getCustomProperty(key: string): Promise<JsonMap>;
+  addToCustomPropertySet(key: string, values: string[]): void;
+  removeFromCustomPropertySet(key: string, values: string[]): void;
   removeCustomProperty(key: string): void;
   clearCustomProperties(): void;
   readonly onSystemEvent: EventEmitter<SystemEventPayload>;
@@ -793,6 +795,8 @@ Each step is separate because:
 | `getCustomProperty(key)` | Retrieve a custom property value | ✅ Implemented |
 | `removeCustomProperty(key)` | Remove a custom property | ✅ Implemented |
 | `clearCustomProperties()` | Remove all custom properties | ✅ Implemented |
+| `addToCustomPropertySet(key, values)` | Add items to a string-set property, atomically | ✅ Implemented |
+| `removeFromCustomPropertySet(key, values)` | Remove items from a string-set property, atomically | ✅ Implemented |
 | `setLogLevel(level)` | Control SDK logging verbosity | ✅ Implemented |
 | `getLogLevel()` | Get current SDK log level | ✅ Implemented |
 | `flush()` | Send events immediately (don't wait for batch) | TODO (KMP SDK support needed) |
@@ -802,7 +806,7 @@ Each step is separate because:
 
 Custom properties are persistent user attributes stored by the KMP SDK (in-memory cache + Room database). They are included in session payloads sent to the backend and can be used for campaign targeting via the `@custom` dataset.
 
-**Supported value types:** `string`, `number`, `boolean`
+**Supported value types:** `string`, `number`, `boolean`, `string[]` (a set of strings)
 
 **Usage:**
 
@@ -817,6 +821,14 @@ Amply.setCustomProperty('premium', true);
 // Set multiple properties at once
 Amply.setCustomProperties({ plan: 'premium', age: 25, active: true });
 
+// A set of strings: duplicates are removed, order does not matter
+Amply.setCustomProperty('interests', ['diving', 'travel']);
+Amply.addToCustomPropertySet('interests', ['photo']);      // ['diving', 'travel', 'photo']
+Amply.removeFromCustomPropertySet('interests', ['travel']); // ['diving', 'photo']
+
+// Property writes (set, add, remove, clear) apply in the order the calls are made:
+// the native SDK serializes them, so a read after a write sees it.
+
 // Retrieve a property
 const plan = await Amply.getCustomProperty('plan'); // 'premium'
 
@@ -830,6 +842,10 @@ Amply.clearCustomProperties();
 **Constraints (enforced by KMP SDK):**
 - Property keys: max 32 characters
 - String values: max 255 characters
+- Sets: max 100 items, each a non-empty string of max 255 characters, max 16 KB in all; a set
+  that breaks a limit is refused whole and the previous value stays
+- Sets in event properties (`trackEvent`): max 25 items
+- A list holding anything but strings is dropped in JS before it reaches the native SDK
 
 **Architecture:**
 

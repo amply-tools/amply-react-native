@@ -102,6 +102,16 @@ static facebook::jsi::Value __hostFunction_NativeAmplyModuleSpecJSI_setCustomPro
   return static_cast<JavaTurboModule &>(turboModule).invokeJavaMethod(rt, VoidKind, "setCustomProperties", "(Lcom/facebook/react/bridge/ReadableMap;)V", args, count, cachedMethodId);
 }
 
+static facebook::jsi::Value __hostFunction_NativeAmplyModuleSpecJSI_addToCustomPropertySet(facebook::jsi::Runtime& rt, TurboModule &turboModule, const facebook::jsi::Value* args, size_t count) {
+  static jmethodID cachedMethodId = nullptr;
+  return static_cast<JavaTurboModule &>(turboModule).invokeJavaMethod(rt, VoidKind, "addToCustomPropertySet", "(Ljava/lang/String;Lcom/facebook/react/bridge/ReadableArray;)V", args, count, cachedMethodId);
+}
+
+static facebook::jsi::Value __hostFunction_NativeAmplyModuleSpecJSI_removeFromCustomPropertySet(facebook::jsi::Runtime& rt, TurboModule &turboModule, const facebook::jsi::Value* args, size_t count) {
+  static jmethodID cachedMethodId = nullptr;
+  return static_cast<JavaTurboModule &>(turboModule).invokeJavaMethod(rt, VoidKind, "removeFromCustomPropertySet", "(Ljava/lang/String;Lcom/facebook/react/bridge/ReadableArray;)V", args, count, cachedMethodId);
+}
+
 static facebook::jsi::Value __hostFunction_NativeAmplyModuleSpecJSI_getCustomProperty(facebook::jsi::Runtime& rt, TurboModule &turboModule, const facebook::jsi::Value* args, size_t count) {
   static jmethodID cachedMethodId = nullptr;
   return static_cast<JavaTurboModule &>(turboModule).invokeJavaMethod(rt, PromiseKind, "getCustomProperty", "(Ljava/lang/String;Lcom/facebook/react/bridge/Promise;)V", args, count, cachedMethodId);
@@ -147,6 +157,8 @@ NativeAmplyModuleSpecJSI::NativeAmplyModuleSpecJSI(const JavaTurboModule::InitPa
   methodMap_["setLogLevel"] = MethodMetadata {1, __hostFunction_NativeAmplyModuleSpecJSI_setLogLevel};
   methodMap_["getLogLevel"] = MethodMetadata {0, __hostFunction_NativeAmplyModuleSpecJSI_getLogLevel};
   methodMap_["setCustomProperties"] = MethodMetadata {1, __hostFunction_NativeAmplyModuleSpecJSI_setCustomProperties};
+  methodMap_["addToCustomPropertySet"] = MethodMetadata {2, __hostFunction_NativeAmplyModuleSpecJSI_addToCustomPropertySet};
+  methodMap_["removeFromCustomPropertySet"] = MethodMetadata {2, __hostFunction_NativeAmplyModuleSpecJSI_removeFromCustomPropertySet};
   methodMap_["getCustomProperty"] = MethodMetadata {1, __hostFunction_NativeAmplyModuleSpecJSI_getCustomProperty};
   methodMap_["removeCustomProperty"] = MethodMetadata {1, __hostFunction_NativeAmplyModuleSpecJSI_removeCustomProperty};
   methodMap_["clearCustomProperties"] = MethodMetadata {0, __hostFunction_NativeAmplyModuleSpecJSI_clearCustomProperties};

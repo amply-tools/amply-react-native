@@ -28,6 +28,16 @@ describe('forwardEvent', () => {
     expect(forwardEvent).toHaveBeenCalledWith(payload);
   });
 
+  it('passes forwardArraysAsSets along when the caller sets it', async () => {
+    const forwardEvent = jest.fn(() => Promise.resolve());
+    const Amply = loadWith({forwardEvent});
+    const payload = {source: 'amplitude', name: 'Purchase', properties: {tags: ['a', 'b']}, forwardArraysAsSets: true};
+
+    await Amply.forwardEvent(payload);
+
+    expect(forwardEvent).toHaveBeenCalledWith(payload);
+  });
+
   it('propagates a native rejection', async () => {
     const Amply = loadWith({forwardEvent: jest.fn(() => Promise.reject(new Error('AMP_NOT_INITIALIZED')))});
 

@@ -46,7 +46,8 @@ describe('amplyPlugin user properties', () => {
       expect(sdk.removeCustomProperty).not.toHaveBeenCalled();
     });
 
-    it.each(['$setOnce', '$add', '$append', '$prepend', '$preInsert', '$postInsert', '$remove', '$clearAll'])(
+    // The set mutations left this table on purpose: they are string sets now, see below.
+    it.each(['$setOnce', '$add', '$clearAll'])(
       '%s is ignored',
       async (operation) => {
         const sdk = await identify(NAMED, {[operation]: {plan: 'pro'}});
@@ -103,7 +104,6 @@ describe('amplyPlugin user properties', () => {
     it.each<[string, unknown]>([
       ['null', null],
       ['undefined', undefined],
-      ['an array', ['pro']],
       ['an object', {tier: 'pro'}],
       ['a Date', new Date(5)],
       ['NaN', NaN],
@@ -125,6 +125,248 @@ describe('amplyPlugin user properties', () => {
       const sdk = await identify({userProperties: ['plan', 'tier']}, {$set: {plan: null, tier: 'gold'}});
 
       expect(sdk.setCustomProperties.mock.calls).toEqual([[{tier: 'gold'}]]);
+    });
+  });
+
+  describe('string sets', () => {
+    const TAGS = {userProperties: ['tags']};
+
+    describe('$set with a list', () => {
+      it('a list of strings sets the whole set', async () => {
+        const sdk = await identify(TAGS, {$set: {tags: ['a', 'b']}});
+
+        expect(sdk.setCustomProperties.mock.calls).toEqual([[{tags: ['a', 'b']}]]);
+      });
+
+      it('an empty list is a value', async () => {
+        const sdk = await identify(TAGS, {$set: {tags: []}});
+
+        expect(sdk.setCustomProperties.mock.calls).toEqual([[{tags: []}]]);
+      });
+
+      it('numbers become text, integers without .0', async () => {
+        const sdk = await identify(TAGS, {$set: {tags: [1, 1.5, 'a', 0, -2]}});
+
+        expect(sdk.setCustomProperties.mock.calls).toEqual([[{tags: ['1', '1.5', 'a', '0', '-2']}]]);
+      });
+
+      it('sits next to scalars in one call', async () => {
+        const sdk = await identify({userProperties: ['tags', 'plan']}, {$set: {plan: 'pro', tags: ['a']}});
+
+        expect(sdk.setCustomProperties.mock.calls).toEqual([[{plan: 'pro', tags: ['a']}]]);
+      });
+
+      it('limits are left to the native SDK', async () => {
+        const many = Array.from({length: 101}, (_, index) => `t${index}`);
+        const sdk = await identify(TAGS, {$set: {tags: many}});
+
+        expect(sdk.setCustomProperties.mock.calls).toEqual([[{tags: many}]]);
+      });
+    });
+
+    describe('mutations', () => {
+      it.each(['$append', '$postInsert', '$prepend', '$preInsert'])('%s adds to the set', async (operation) => {
+        const sdk = await identify(TAGS, {[operation]: {tags: ['a', 'b']}});
+
+        expect(bridgeCalls(sdk)).toEqual(['add:tags:["a","b"]']);
+      });
+
+      it('$remove removes from the set', async () => {
+        const sdk = await identify(TAGS, {$remove: {tags: ['a', 'b']}});
+
+        expect(bridgeCalls(sdk)).toEqual(['remove:tags:["a","b"]']);
+      });
+
+      it.each<[string, unknown, string[]]>([
+        ['a string', 'a', ['a']],
+        ['an integer', 1, ['1']],
+        ['a fraction', 1.5, ['1.5']],
+      ])('%s on its own is a one-item list', async (_, value, expected) => {
+        const sdk = await identify(TAGS, {$append: {tags: value}, $remove: {tags: value}});
+
+        expect(sdk.addToCustomPropertySet.mock.calls).toEqual([['tags', expected]]);
+        expect(sdk.removeFromCustomPropertySet.mock.calls).toEqual([['tags', expected]]);
+      });
+
+      it('numbers inside the list become text', async () => {
+        const sdk = await identify(TAGS, {$append: {tags: [1, 1.5, 'x']}});
+
+        expect(sdk.addToCustomPropertySet.mock.calls).toEqual([['tags', ['1', '1.5', 'x']]]);
+      });
+
+      it('copies only the allowed keys', async () => {
+        const sdk = await identify(TAGS, {$append: {tags: 'a', other: 'b'}, $remove: {other: 'c'}});
+
+        expect(bridgeCalls(sdk)).toEqual(['add:tags:["a"]']);
+      });
+
+      it('an exclude list holds for mutations', async () => {
+        const sdk = await identify(
+          {userProperties: {exclude: ['email']}},
+          {$append: {email: 'a@b.c', tags: 'a'}, $remove: {email: 'a@b.c'}},
+        );
+
+        expect(bridgeCalls(sdk)).toEqual(['add:tags:["a"]']);
+      });
+
+      it('a predicate sees the key and the list as it will be sent', async () => {
+        const userProperties = jest.fn(() => true);
+        await identify({userProperties}, {$append: {tags: [1, 'a']}});
+
+        expect(userProperties.mock.calls).toEqual([['tags', ['1', 'a']]]);
+      });
+
+      it('a blank key is dropped', async () => {
+        const sdk = await identify({userProperties: () => true}, {$append: {' ': 'a'}, $remove: {'': 'a'}});
+
+        expect(bridgeCalls(sdk)).toEqual([]);
+      });
+
+      it('a bad value costs its key, not the others', async () => {
+        const sdk = await identify({userProperties: ['tags', 'tiers']}, {$append: {tags: [null], tiers: ['gold']}});
+
+        expect(bridgeCalls(sdk)).toEqual(['add:tiers:["gold"]']);
+      });
+
+      it('an operation that is not an object is not an error', async () => {
+        const sdk = await identify(TAGS, {$append: 'tags', $remove: ['tags']});
+
+        expect(bridgeCalls(sdk)).toEqual([]);
+      });
+
+      it('a parked mutation keeps the values it was given', async () => {
+        const sdk = load({}, false);
+        const plugin = await install(sdk.Amply, TAGS);
+        const values = ['a'];
+        await plugin.execute(identifyOf({$append: {tags: values}}));
+
+        values.push('changed-later');
+        await sdk.Amply.initialize(CONFIG);
+        await settle();
+
+        expect(sdk.addToCustomPropertySet.mock.calls).toEqual([['tags', ['a']]]);
+      });
+
+      it('a mutation that throws costs that item, not the queue', async () => {
+        const sdk = load();
+        sdk.addToCustomPropertySet.mockImplementationOnce(() => {
+          throw new Error('bridge threw');
+        });
+        const plugin = await install(sdk.Amply, TAGS);
+
+        await plugin.execute(identifyOf({$append: {tags: 'a'}}));
+        await plugin.execute(eventFor('next'));
+        await settle();
+
+        expect(names(sdk.forwardEvent)).toEqual(['next']);
+      });
+    });
+
+    describe('order within one identify', () => {
+      it('$set goes before $append on the same key', async () => {
+        const sdk = await identify(TAGS, {$set: {tags: ['a']}, $append: {tags: 'b'}});
+
+        expect(bridgeCalls(sdk)).toEqual(['set:{"tags":["a"]}', 'add:tags:["b"]']);
+      });
+
+      it("follows Amplitude's order of operations, not the order of the keys", async () => {
+        const sdk = await identify(TAGS, {
+          $remove: {tags: 'e'},
+          $postInsert: {tags: 'd'},
+          $preInsert: {tags: 'c'},
+          $prepend: {tags: 'b'},
+          $append: {tags: 'a'},
+          $set: {tags: ['s']},
+        });
+
+        expect(bridgeCalls(sdk)).toEqual([
+          'set:{"tags":["s"]}',
+          'add:tags:["a"]',
+          'add:tags:["b"]',
+          'add:tags:["c"]',
+          'add:tags:["d"]',
+          'remove:tags:["e"]',
+        ]);
+      });
+
+      it('$unset goes before the mutations, as in Amplitude', async () => {
+        const sdk = await identify(TAGS, {$append: {tags: 'a'}, $unset: {tags: '-'}});
+
+        expect(bridgeCalls(sdk)).toEqual(['unset:tags', 'add:tags:["a"]']);
+      });
+    });
+
+    describe('a list that cannot be a set', () => {
+      it.each<[string, unknown]>([
+        ['null', null],
+        ['undefined', undefined],
+        ['true', true],
+        ['an object', {tier: 'pro'}],
+        ['a nested list', ['a']],
+        ['NaN', NaN],
+        ['Infinity', Infinity],
+        ['a Date', new Date(5)],
+      ])('a list holding %s is dropped whole', async (_, item) => {
+        const sdk = await identify(TAGS, {
+          $set: {tags: ['ok', item]},
+          $append: {tags: ['ok', item]},
+          $remove: {tags: ['ok', item]},
+        });
+
+        expect(bridgeCalls(sdk)).toEqual([]);
+      });
+
+      it.each<[string, unknown]>([
+        ['null', null],
+        ['true', true],
+        ['an object', {tier: 'pro'}],
+        ['NaN', NaN],
+      ])('a mutation of %s on its own is dropped', async (_, value) => {
+        const sdk = await identify(TAGS, {$append: {tags: value}, $remove: {tags: value}});
+
+        expect(bridgeCalls(sdk)).toEqual([]);
+      });
+
+      it('says so under debug, naming the key and the operation', async () => {
+        const debug = jest.spyOn(console, 'debug').mockImplementation(() => {});
+
+        await identify({...TAGS, debug: true}, {$set: {tags: ['a', null]}, $append: {tags: [true]}});
+
+        const lines = debug.mock.calls.map(([line]) => String(line));
+        expect(lines).toEqual(
+          expect.arrayContaining([
+            expect.stringMatching(/^\[Amply\] .*\$set tags.*text or a number/),
+            expect.stringMatching(/^\[Amply\] .*\$append tags.*text or a number/),
+          ]),
+        );
+      });
+
+      it('a single bad operand is named as a value, not as a list', async () => {
+        const debug = jest.spyOn(console, 'debug').mockImplementation(() => {});
+
+        await identify({...TAGS, debug: true}, {$append: {tags: true}});
+
+        const lines = debug.mock.calls.map(([line]) => String(line));
+        expect(lines).toContain('[Amply] skipped $append tags: value must be text, a number or a list of them');
+        expect(lines.some((line) => line.includes('every list item'))).toBe(false);
+      });
+
+      it('is quiet without debug', async () => {
+        const debug = jest.spyOn(console, 'debug').mockImplementation(() => {});
+
+        await identify(TAGS, {$set: {tags: ['a', null]}});
+
+        expect(debug).not.toHaveBeenCalled();
+      });
+
+      it('does not mention a key the host did not ask for', async () => {
+        const debug = jest.spyOn(console, 'debug').mockImplementation(() => {});
+
+        await identify({...TAGS, debug: true}, {$set: {secret_list: ['a', null]}});
+
+        const lines = debug.mock.calls.map(([line]) => String(line));
+        expect(lines.some((line) => line.includes('secret_list'))).toBe(false);
+      });
     });
   });
 

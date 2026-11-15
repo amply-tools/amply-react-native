@@ -17,6 +17,8 @@ import {
   isUserPropertyKey,
   isUserPropertyValue,
   toBridgeProperties,
+  toSetItems,
+  toSetOperand,
 } from './amplitudePluginValues';
 import type {FlatValue, Properties} from './amplitudePluginValues';
 import {createNameTest, pickKeys} from './amplitudePluginLists';
@@ -49,9 +51,20 @@ export type AmplyPluginOptions = {
   syncUserId?: boolean;
   /**
    * Which user properties to copy: a list of keys, `{include}` / `{exclude}` lists, or a function.
-   * By default none.
+   * By default none. A function receives arrays for `$set` and, for list operations
+   * (`$append`, `$prepend`, `$preInsert`, `$postInsert`, `$remove`), the operand rather than the
+   * resulting value. A list value becomes a string set (numbers as text), and Amplitude's list
+   * operations add to it (`append`, `prepend`, `preInsert`, `postInsert`) or remove from it (`remove`).
+   * A list holding anything but text and numbers is not copied.
    */
   userProperties?: string[] | NameLists | ((key: string, value: unknown) => boolean);
+  /**
+   * Event properties that are lists arrive in Amply as string sets (numbers as text, `1` not `1.0`),
+   * so campaigns can ask whether a list contains a value. Off by default: a list arrives as one
+   * `"a,b,c"` string, as it always has. A list Amply cannot keep as a set (more than 25 items, an
+   * empty or over-long item, a `true` or `null` in it) is left out, and the event still goes.
+   */
+  forwardArraysAsSets?: boolean;
   /** Log what was skipped and why. */
   debug?: boolean;
 };
@@ -411,15 +424,26 @@ function createUserSync(
   };
 }
 
-function operationEntries(event: AmplitudeEventLike, operation: '$set' | '$unset'): Array<[string, unknown]> {
+function operationEntries(event: AmplitudeEventLike, operation: string): [string, unknown][] {
   const entries = event.user_properties?.[operation];
   return isPlainObject(entries) ? Object.entries(entries) : [];
 }
 
-type UserPropertyTest = (key: string, value: unknown) => boolean;
+type UserPropertyTest = {
+  /** Whether this key goes along with this value. Only ever asked with a value that can be copied. */
+  allows(key: string, value: unknown): boolean;
+  /** Asked before the value is known, so a note never names a key the host did not ask for. */
+  mayCopy(key: string): boolean;
+};
 
 const warnUserPropertyLists = (): void =>
   warnOnce('user-properties-lists', 'userProperties lists are not readable, no user properties are copied');
+
+const COPY_NONE: UserPropertyTest = {allows: () => false, mayCopy: () => false};
+
+function byKey(isListed: (key: string) => boolean): UserPropertyTest {
+  return {allows: (key) => isListed(key), mayCopy: (key) => isListed(key)};
+}
 
 /**
  * `true` is not an option on purpose: "everything" must not be one typo away. Copying everything
@@ -427,11 +451,10 @@ const warnUserPropertyLists = (): void =>
  */
 function toUserPropertyTest(allowed: UserProperties): UserPropertyTest {
   if (Array.isArray(allowed)) {
-    const isListed = createNameTest({include: allowed}, warnUserPropertyLists);
-    return (key) => isListed(key);
+    return byKey(createNameTest({include: allowed}, warnUserPropertyLists));
   }
   if (typeof allowed === 'function') {
-    return (key, value) => {
+    const allows = (key: string, value: unknown): boolean => {
       try {
         const answer: unknown = allowed(key, value);
         swallowRejection(answer);
@@ -441,23 +464,76 @@ function toUserPropertyTest(allowed: UserProperties): UserPropertyTest {
         return false;
       }
     };
+    // A predicate cannot answer without the value, and it never sees one that cannot be copied.
+    return {allows, mayCopy: () => true};
   }
   if (isPlainObject(allowed)) {
-    const isListed = createNameTest(allowed, warnUserPropertyLists);
-    return (key) => isListed(key);
+    return byKey(createNameTest(allowed, warnUserPropertyLists));
   }
-  return () => false;
+  return COPY_NONE;
 }
 
-/** §8. Only `$set` and `$unset`: `$clearAll` would wipe what Amply owns. */
-function copyUserProperties(event: AmplitudeEventLike, isAllowed: UserPropertyTest, enqueueOwn: EnqueueOwn): void {
-  const set = Object.fromEntries(
-    operationEntries(event, '$set').filter(
-      ([key, value]) => isUserPropertyKey(key) && isUserPropertyValue(value) && isAllowed(key, value),
-    ),
-  ) as Record<string, FlatValue>;
+type SetMutation = {operation: string; send: (key: string, values: string[]) => void};
+
+/**
+ * Amplitude's list operations, in the order Amplitude applies them whatever the order of the keys
+ * (core's `OrderedIdentifyOperations`). A string set has no order, so the inserts at either end
+ * are all an add, and "only if absent" is what a set does anyway.
+ */
+const SET_MUTATIONS: readonly SetMutation[] = [
+  {operation: '$append', send: (key, values) => getNativeModule().addToCustomPropertySet(key, values)},
+  {operation: '$prepend', send: (key, values) => getNativeModule().addToCustomPropertySet(key, values)},
+  {operation: '$preInsert', send: (key, values) => getNativeModule().addToCustomPropertySet(key, values)},
+  {operation: '$postInsert', send: (key, values) => getNativeModule().addToCustomPropertySet(key, values)},
+  {operation: '$remove', send: (key, values) => getNativeModule().removeFromCustomPropertySet(key, values)},
+];
+
+type CopyContext = {test: UserPropertyTest; note: Note};
+
+/**
+ * The entries of one operation that may cross, each value already in the form it crosses in.
+ * `toValue` answers `undefined` for a value that cannot be copied, and a key the host asked for
+ * is named in a debug note when that happens to a list.
+ */
+function copyableEntries<T>(
+  event: AmplitudeEventLike,
+  operation: string,
+  toValue: (value: unknown) => T | undefined,
+  {test, note}: CopyContext,
+): [string, T][] {
+  return operationEntries(event, operation).flatMap(([key, raw]): [string, T][] => {
+    if (!isUserPropertyKey(key)) {
+      return [];
+    }
+    const value = toValue(raw);
+    if (value === undefined) {
+      const isList = Array.isArray(raw);
+      if ((isList || operation !== '$set') && test.mayCopy(key)) {
+        const reason = isList ? 'every list item must be text or a number' : 'value must be text, a number or a list of them';
+        note(`skipped ${operation} ${key}: ${reason}`);
+      }
+      return [];
+    }
+    return test.allows(key, value) ? [[key, value]] : [];
+  });
+}
+
+function toSetValue(value: unknown): FlatValue | string[] | undefined {
+  if (Array.isArray(value)) {
+    return toSetItems(value);
+  }
+  return isUserPropertyValue(value) ? value : undefined;
+}
+
+/**
+ * §8: `$set` and `$unset`, and the list operations as string sets. `$setOnce` and `$add` have no
+ * counterpart, and `$clearAll` would wipe what Amply owns. Amplitude runs `$unset` before `$set`;
+ * here it goes after, as it always has, which only matters to a key both name.
+ */
+function copyUserProperties(event: AmplitudeEventLike, context: CopyContext, enqueueOwn: EnqueueOwn): void {
+  const set = Object.fromEntries(copyableEntries(event, '$set', toSetValue, context));
   const unset = operationEntries(event, '$unset')
-    .filter(([key, value]) => isUserPropertyKey(key) && isAllowed(key, value))
+    .filter(([key, value]) => isUserPropertyKey(key) && context.test.allows(key, value))
     .map(([key]) => key);
 
   if (Object.keys(set).length > 0) {
@@ -468,6 +544,14 @@ function copyUserProperties(event: AmplitudeEventLike, isAllowed: UserPropertyTe
       unset.forEach((key) => getNativeModule().removeCustomProperty(key));
     });
   }
+  SET_MUTATIONS.forEach(({operation, send}) => {
+    const entries = copyableEntries(event, operation, toSetOperand, context);
+    if (entries.length > 0) {
+      enqueueOwn('property', async () => {
+        entries.forEach(([key, values]) => send(key, values));
+      });
+    }
+  });
 }
 
 /** A list the plugin cannot read sends nothing it governs, and says so once. */
@@ -493,7 +577,7 @@ function prepareUserPropertyTest(options: AmplyPluginOptions): UserPropertyTest 
     return toUserPropertyTest(options.userProperties);
   } catch {
     warnUserPropertyLists();
-    return () => false;
+    return COPY_NONE;
   }
 }
 
@@ -509,7 +593,9 @@ export function amplyPlugin(options: AmplyPluginOptions = {}): AmplitudePluginLi
   };
 
   const lists = prepareLists(options);
-  const isUserPropertyAllowed = prepareUserPropertyTest(options);
+  const userPropertyTest = prepareUserPropertyTest(options);
+  /** Only a real `true`, like the host's other answers. */
+  const forwardsArraysAsSets = options.forwardArraysAsSets === true;
 
   const enqueueOwn: EnqueueOwn = (kind, run) => enqueue({owner: plugin, kind, run}, note);
   const userSync = createUserSync(options, () => config, enqueueOwn, () =>
@@ -541,16 +627,16 @@ export function amplyPlugin(options: AmplyPluginOptions = {}): AmplitudePluginLi
     userSync.sync(event);
     if (SERVICE_EVENTS.has(event.event_type)) {
       if (event.event_type === '$identify') {
-        copyUserProperties(event, isUserPropertyAllowed, enqueueOwn);
+        copyUserProperties(event, {test: userPropertyTest, note}, enqueueOwn);
       }
       note(`skipped ${event.event_type}: Amplitude service event`);
       return;
     }
     const outgoing = toOutgoing(event, options, lists, note);
     if (outgoing) {
-      const run = async (): Promise<void> =>
-        getNativeModule().forwardEvent({source: FORWARD_SOURCE, ...outgoing});
-      enqueueOwn('event', run);
+      // Absent rather than `false` when off, so the payload stays exactly what it was before the option.
+      const payload = {source: FORWARD_SOURCE, ...outgoing, ...(forwardsArraysAsSets ? {forwardArraysAsSets: true} : {})};
+      enqueueOwn('event', async () => getNativeModule().forwardEvent(payload));
     }
   };
 

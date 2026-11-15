@@ -17,6 +17,7 @@ import com.facebook.react.bridge.Promise;
 import com.facebook.react.bridge.ReactApplicationContext;
 import com.facebook.react.bridge.ReactContextBaseJavaModule;
 import com.facebook.react.bridge.ReactMethod;
+import com.facebook.react.bridge.ReadableArray;
 import com.facebook.react.bridge.ReadableMap;
 import com.facebook.react.turbomodule.core.interfaces.TurboModule;
 import javax.annotation.Nonnull;
@@ -117,6 +118,14 @@ public abstract class NativeAmplyModuleSpec extends ReactContextBaseJavaModule i
   @ReactMethod
   @DoNotStrip
   public abstract void setCustomProperties(ReadableMap properties);
+
+  @ReactMethod
+  @DoNotStrip
+  public abstract void addToCustomPropertySet(String key, ReadableArray values);
+
+  @ReactMethod
+  @DoNotStrip
+  public abstract void removeFromCustomPropertySet(String key, ReadableArray values);
 
   @ReactMethod
   @DoNotStrip

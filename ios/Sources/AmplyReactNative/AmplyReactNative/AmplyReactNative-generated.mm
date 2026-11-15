@@ -126,6 +126,14 @@ namespace facebook::react {
       return static_cast<ObjCTurboModule&>(turboModule).invokeObjCMethod(rt, VoidKind, "setCustomProperties", @selector(setCustomProperties:), args, count);
     }
 
+    static facebook::jsi::Value __hostFunction_NativeAmplyModuleSpecJSI_addToCustomPropertySet(facebook::jsi::Runtime& rt, TurboModule &turboModule, const facebook::jsi::Value* args, size_t count) {
+      return static_cast<ObjCTurboModule&>(turboModule).invokeObjCMethod(rt, VoidKind, "addToCustomPropertySet", @selector(addToCustomPropertySet:values:), args, count);
+    }
+
+    static facebook::jsi::Value __hostFunction_NativeAmplyModuleSpecJSI_removeFromCustomPropertySet(facebook::jsi::Runtime& rt, TurboModule &turboModule, const facebook::jsi::Value* args, size_t count) {
+      return static_cast<ObjCTurboModule&>(turboModule).invokeObjCMethod(rt, VoidKind, "removeFromCustomPropertySet", @selector(removeFromCustomPropertySet:values:), args, count);
+    }
+
     static facebook::jsi::Value __hostFunction_NativeAmplyModuleSpecJSI_getCustomProperty(facebook::jsi::Runtime& rt, TurboModule &turboModule, const facebook::jsi::Value* args, size_t count) {
       return static_cast<ObjCTurboModule&>(turboModule).invokeObjCMethod(rt, PromiseKind, "getCustomProperty", @selector(getCustomProperty:resolve:reject:), args, count);
     }
@@ -201,6 +209,12 @@ namespace facebook::react {
         
         
         methodMap_["setCustomProperties"] = MethodMetadata {1, __hostFunction_NativeAmplyModuleSpecJSI_setCustomProperties};
+        
+        
+        methodMap_["addToCustomPropertySet"] = MethodMetadata {2, __hostFunction_NativeAmplyModuleSpecJSI_addToCustomPropertySet};
+        
+        
+        methodMap_["removeFromCustomPropertySet"] = MethodMetadata {2, __hostFunction_NativeAmplyModuleSpecJSI_removeFromCustomPropertySet};
         
         
         methodMap_["getCustomProperty"] = MethodMetadata {1, __hostFunction_NativeAmplyModuleSpecJSI_getCustomProperty};

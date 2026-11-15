@@ -109,6 +109,35 @@ export function toBridgeProperties(properties: unknown): Properties {
   );
 }
 
+/** `String(1)` is `"1"`, never `"1.0"`: the text is made here, before Android turns numbers into doubles. */
+function toSetItem(value: unknown): string | undefined {
+  if (typeof value === 'string') {
+    return value;
+  }
+  return typeof value === 'number' && Number.isFinite(value) ? String(value) : undefined;
+}
+
+/**
+ * A user-property list as a string set: text stays, a finite number becomes its text, anything else
+ * costs the whole list. Limits (count, length, size) are the native SDK's, which refuses the value whole.
+ */
+export function toSetItems(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const items = value.map((item) => toSetItem(item));
+  return items.every((item): item is string => item !== undefined) ? items : undefined;
+}
+
+/** An operand of Amplitude's list operations: a list, or one value standing for a list of one. */
+export function toSetOperand(value: unknown): string[] | undefined {
+  if (Array.isArray(value)) {
+    return toSetItems(value);
+  }
+  const item = toSetItem(value);
+  return item === undefined ? undefined : [item];
+}
+
 export function isUserPropertyKey(key: string): boolean {
   return key.trim() !== '' && key.length <= MAX_USER_PROPERTY_KEY_LENGTH;
 }

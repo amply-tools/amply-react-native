@@ -65,6 +65,11 @@ export type ForwardEventPayload = {
   source: string;
   name: string;
   properties?: JsonMap | null;
+  /**
+   * `true` makes the native SDK keep a list of text (or numbers) as a string set instead of joining
+   * it into one `"a,b,c"` string. Absent or `false` is the joined string, as before.
+   */
+  forwardArraysAsSets?: boolean | null;
 };
 
 export type EventRecord = {
@@ -265,10 +270,23 @@ export interface Spec extends TurboModule {
    */
   getLogLevel(): string;
   /**
-   * Set one or more custom properties. Values can be string, number, or boolean.
+   * Set one or more custom properties. Values can be string, number, boolean, or a list of
+   * strings (a set; the SDK normalises it and owns the limits).
    * @param properties Key-value map of properties to set
    */
   setCustomProperties(properties: JsonMap): void;
+  /**
+   * Add items to the string set held by a custom property, atomically on the device.
+   * @param key The property key
+   * @param values The items to add
+   */
+  addToCustomPropertySet(key: string, values: string[]): void;
+  /**
+   * Remove items from the string set held by a custom property, atomically on the device.
+   * @param key The property key
+   * @param values The items to remove
+   */
+  removeFromCustomPropertySet(key: string, values: string[]): void;
   /**
    * Get a custom property value by key.
    * @param key The property key

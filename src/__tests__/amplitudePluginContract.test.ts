@@ -289,6 +289,64 @@ describe.each(VERSIONS)('amplyPlugin on real Amplitude core %s', (version, alias
     expect(bridgeCalls(sdk)).toEqual(['set:{"plan":"pro","n":1.5}', 'unset:trial']);
   });
 
+  test('list operations from a real Identify arrive as string sets', async () => {
+    // Arrange: Identify takes each key once, so every operation gets its own.
+    const plugin = amply({userProperties: {}});
+    const executed = jest.spyOn(plugin, 'execute');
+    const core = await boot(plugin);
+    const identify = new Identify()
+      .remove('r', ['x', 2])
+      .postInsert('po', 'd')
+      .preInsert('pi', ['c'])
+      .prepend('p', 'b')
+      .append('a', [1, 1.5])
+      .set('s', ['s1', 2])
+      .setOnce('once', ['o'])
+      .add('count', 1);
+
+    // Act
+    await core.identify(identify).promise;
+    await settle();
+
+    // Assert
+    const event = executed.mock.calls[0][0];
+    expect(Object.keys(event.user_properties ?? {}).sort()).toEqual(
+      ['$add', '$append', '$postInsert', '$preInsert', '$prepend', '$remove', '$set', '$setOnce'].sort(),
+    );
+    expect(bridgeCalls(sdk)).toEqual([
+      'set:{"s":["s1","2"]}',
+      'add:a:["1","1.5"]',
+      'add:p:["b"]',
+      'add:pi:["c"]',
+      'add:po:["d"]',
+      'remove:r:["x","2"]',
+    ]);
+  });
+
+  test.each<[string, boolean | undefined, Record<string, unknown>]>([
+    ['off by default', undefined, {}],
+    ['on when asked', true, {forwardArraysAsSets: true}],
+  ])('event arrays from a real track: forwardArraysAsSets %s', async (_, forwardArraysAsSets, flag) => {
+    // Arrange
+    const core = await boot(amply(forwardArraysAsSets === undefined ? undefined : {forwardArraysAsSets}));
+
+    // Act
+    await core.track('Purchase', {tags: ['a', 'b'], ids: [1, 2.5], plan: 'pro'}).promise;
+    await settle();
+
+    // Assert: the arrays reach native whole; native joins them or makes sets.
+    expect(sdk.forwardEvent.mock.calls).toStrictEqual([
+      [
+        {
+          source: 'amplitude',
+          name: 'Purchase',
+          properties: {tags: ['a', 'b'], ids: ['1', '2.5'], plan: 'pro'},
+          ...flag,
+        },
+      ],
+    ]);
+  });
+
   test('throwing filter leaves track resolved', async () => {
     // Arrange
     const other = spy('other');

@@ -543,6 +543,10 @@ export type RegisterGateOptions = {
  * identical to {@link track}: fire-and-forget, never blocks on a campaign.
  *
  * Both forms are supported; pick one and stay consistent within a codebase.
+ *
+ * A property may be a list of strings, recorded as a set: duplicates removed, at most 25 items
+ * of at most 255 characters each. The SDK leaves out a list that breaks those rules and keeps
+ * the rest of the event.
  */
 export async function trackEvent(
   event: string,
@@ -770,31 +774,112 @@ export async function addSystemEventListener(
 }
 
 /**
- * Custom property value type. Supports string, number, and boolean values.
+ * Custom property value type: a string, a number, a boolean, or a set of strings.
+ *
+ * A set is passed as a list of strings. The SDK removes duplicates (keeping the first
+ * occurrence), and the order of the items does not matter. A set holds at most 100 items of at
+ * most 255 characters each, and at most 16 KB in all. A set that breaks a limit, or that holds
+ * an empty string, is refused whole and the previous value stays. `[]` is a value of its own,
+ * not the same as a property that is not set.
  */
-export type CustomPropertyValue = string | number | boolean;
+export type CustomPropertyValue = string | number | boolean | string[];
+
+function isStringList(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every(item => typeof item === 'string');
+}
+
+/** A debug line for a value JS keeps from the bridge. Never throws, even through a patched console. */
+function logDropped(message: string): void {
+  try {
+    console.debug(`[Amply] ${message}`);
+  } catch {
+    // Nowhere left to report it.
+  }
+}
+
+/**
+ * Only lists of strings may cross the bridge as a list: each platform would turn a number or a
+ * null inside one into something different. Everything else (limits, duplicates) is the SDK's.
+ */
+function isAcceptedPropertyValue(key: string, value: unknown): boolean {
+  if (!Array.isArray(value) || isStringList(value)) {
+    return true;
+  }
+  logDropped(`Custom property '${key}' not set: a list value must hold only strings`);
+  return false;
+}
 
 /**
  * Set a single custom property.
  * @param key The property key (max 32 characters)
- * @param value The property value (string max 255 characters)
+ * @param value The property value: string (max 255 characters), number, boolean, or a list of
+ * strings for a set (see {@link CustomPropertyValue})
  */
 export function setCustomProperty(key: string, value: CustomPropertyValue): void {
+  if (!isAcceptedPropertyValue(key, value)) {
+    return;
+  }
   getNativeModule().setCustomProperties({[key]: value});
 }
 
 /**
- * Set multiple custom properties at once.
+ * Set multiple custom properties at once. A list value that does not hold only strings is left
+ * out; the other properties are still set.
  * @param properties Key-value map of properties to set
  */
 export function setCustomProperties(properties: Record<string, CustomPropertyValue>): void {
-  getNativeModule().setCustomProperties(properties);
+  const accepted = Object.fromEntries(
+    Object.entries(properties).filter(([key, value]) => isAcceptedPropertyValue(key, value)),
+  );
+  const isAnythingDropped = Object.keys(accepted).length < Object.keys(properties).length;
+  if (isAnythingDropped && Object.keys(accepted).length === 0) {
+    return;
+  }
+  getNativeModule().setCustomProperties(accepted);
+}
+
+/** The items of a set mutation, or null (logged) when they are not a list of strings. */
+function acceptedSetItems(operation: string, key: string, values: unknown): string[] | null {
+  if (isStringList(values)) {
+    return values;
+  }
+  logDropped(`${operation}('${key}') ignored: values must be a list of strings`);
+  return null;
+}
+
+/**
+ * Add items to the set held by a custom property, in one step on the device: no read, no race
+ * with another add. Calls apply in the order they are made. A key that is not set, or holds a single value, becomes a set. Items already
+ * in the set are ignored. If the result would break a limit (see {@link CustomPropertyValue}),
+ * nothing is added.
+ * @param key The property key
+ * @param values The items to add
+ */
+export function addToCustomPropertySet(key: string, values: string[]): void {
+  const items = acceptedSetItems('addToCustomPropertySet', key, values);
+  if (items) {
+    getNativeModule().addToCustomPropertySet(key, items);
+  }
+}
+
+/**
+ * Remove items from the set held by a custom property, in one step on the device. Items not in
+ * the set are ignored; removing the last item leaves an empty set. A key that is not set, or
+ * holds a single value, is left as it is. Calls apply in the order they are made.
+ * @param key The property key
+ * @param values The items to remove
+ */
+export function removeFromCustomPropertySet(key: string, values: string[]): void {
+  const items = acceptedSetItems('removeFromCustomPropertySet', key, values);
+  if (items) {
+    getNativeModule().removeFromCustomPropertySet(key, items);
+  }
 }
 
 /**
  * Get a custom property value by key.
  * @param key The property key
- * @returns The property value, or null if not found
+ * @returns The property value (a string set comes back as `string[]`), or null if not found
  */
 export async function getCustomProperty(key: string): Promise<CustomPropertyValue | null> {
   const result = await getNativeModule().getCustomProperty(key);
@@ -890,5 +975,7 @@ export default {
   getCustomProperty,
   removeCustomProperty,
   clearCustomProperties,
+  addToCustomPropertySet,
+  removeFromCustomPropertySet,
   systemEvents,
 };

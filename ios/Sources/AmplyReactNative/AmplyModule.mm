@@ -402,8 +402,18 @@ static BOOL AmplyIsBlank(NSString *value)
       properties = (NSDictionary *)propsObj;
     }
 
-    // KMP `trackForwarded(source, eventName, properties)` on the ASDKAmply facade.
-    [self.amplyInstance trackForwardedSource:source eventName:eventName properties:properties];
+    // Absent and null are off: only a payload that says `true` asks for sets. Off stays the call
+    // it always was, KMP `trackForwarded(source, eventName, properties)` on the ASDKAmply facade.
+    std::optional<bool> forwardArraysAsSetsOpt = payload.forwardArraysAsSets();
+    BOOL forwardArraysAsSets = forwardArraysAsSetsOpt.has_value() && forwardArraysAsSetsOpt.value();
+    if (forwardArraysAsSets) {
+      [self.amplyInstance trackForwardedSource:source
+                                     eventName:eventName
+                                    properties:properties
+                           forwardArraysAsSets:YES];
+    } else {
+      [self.amplyInstance trackForwardedSource:source eventName:eventName properties:properties];
+    }
 
     RCTLogInfo(@"[AmplyReactNative] Forwarded event: %@", eventName);
 
@@ -1029,6 +1039,68 @@ static ASDKDataSetType *AmplyDataSetTypeFromDictionary(NSDictionary *type, NSStr
       resolve(result);
     }
   }];
+}
+
+/**
+ * The items of a set mutation as an immutable copy, or nil when [raw] is not an array of strings.
+ * The whole call is refused rather than filtered, as the SDK refuses an invalid operand whole.
+ */
+static NSArray<NSString *> *AmplyStringItemsFromArray(id raw) {
+  if (![raw isKindOfClass:[NSArray class]]) {
+    return nil;
+  }
+  for (id item in (NSArray *)raw) {
+    if (![item isKindOfClass:[NSString class]]) {
+      return nil;
+    }
+  }
+  return [(NSArray<NSString *> *)raw copy];
+}
+
+/** Runs [apply] now, or parks it until initialize; @try keeps an ObjC exception out of the host app. */
+- (void)applyPropertyOp:(void (^)(ASDKAmply *))apply named:(NSString *)name key:(NSString *)key
+{
+  void (^guarded)(ASDKAmply *) = ^(ASDKAmply *instance) {
+    @try {
+      apply(instance);
+    } @catch (NSException *exception) {
+      RCTLogWarn(@"[AmplyReactNative] %@('%@') failed: %@", name, key, exception.reason);
+    }
+  };
+
+  if (self.amplyInstance) {
+    guarded(self.amplyInstance);
+  } else {
+    RCTLogInfo(@"[AmplyReactNative] Buffering %@ until init: %@", name, key);
+    if (!self.pendingPropertyOps) self.pendingPropertyOps = [NSMutableArray new];
+    [self.pendingPropertyOps addObject:guarded];
+  }
+}
+
+- (void)addToCustomPropertySet:(NSString *)key values:(NSArray *)values
+{
+  NSArray<NSString *> *items = AmplyStringItemsFromArray(values);
+  if (!items) {
+    RCTLogWarn(@"[AmplyReactNative] addToCustomPropertySet('%@') ignored: values must be a list of strings", key);
+    return;
+  }
+  [self applyPropertyOp:^(ASDKAmply *instance) {
+    [instance addToCustomPropertySetKey:key values:items];
+    RCTLogInfo(@"[AmplyReactNative] Custom property set items added: %@", key);
+  } named:@"addToCustomPropertySet" key:key];
+}
+
+- (void)removeFromCustomPropertySet:(NSString *)key values:(NSArray *)values
+{
+  NSArray<NSString *> *items = AmplyStringItemsFromArray(values);
+  if (!items) {
+    RCTLogWarn(@"[AmplyReactNative] removeFromCustomPropertySet('%@') ignored: values must be a list of strings", key);
+    return;
+  }
+  [self applyPropertyOp:^(ASDKAmply *instance) {
+    [instance removeFromCustomPropertySetKey:key values:items];
+    RCTLogInfo(@"[AmplyReactNative] Custom property set items removed: %@", key);
+  } named:@"removeFromCustomPropertySet" key:key];
 }
 
 - (void)removeCustomProperty:(NSString *)key

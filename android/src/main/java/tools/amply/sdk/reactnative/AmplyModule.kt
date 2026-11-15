@@ -109,10 +109,14 @@ class AmplyModule(reactContext: ReactApplicationContext) :
     }
 
     val properties = payload.getMap("properties")?.toHashMap()
+    // Absent, null and non-boolean are off: only a payload that says `true` asks for sets.
+    val forwardArraysAsSets = payload.hasKey(FORWARD_ARRAYS_AS_SETS_KEY) &&
+      payload.getType(FORWARD_ARRAYS_AS_SETS_KEY) == ReadableType.Boolean &&
+      payload.getBoolean(FORWARD_ARRAYS_AS_SETS_KEY)
 
     scope.launch {
       try {
-        client.forwardEvent(source, name, properties)
+        client.forwardEvent(source, name, properties, forwardArraysAsSets)
         promise.resolve(null)
       } catch (throwable: Throwable) {
         promise.reject(TRACK_ERROR, throwable)
@@ -263,6 +267,24 @@ class AmplyModule(reactContext: ReactApplicationContext) :
         promise.reject(CUSTOM_PROP_ERROR, throwable)
       }
     }
+  }
+
+  override fun addToCustomPropertySet(key: String, values: ReadableArray) {
+    val items = values.toStringItems()
+    if (items == null) {
+      android.util.Log.w(TAG, "addToCustomPropertySet('$key') ignored: values must be a list of strings")
+      return
+    }
+    client.addToCustomPropertySet(key, items)
+  }
+
+  override fun removeFromCustomPropertySet(key: String, values: ReadableArray) {
+    val items = values.toStringItems()
+    if (items == null) {
+      android.util.Log.w(TAG, "removeFromCustomPropertySet('$key') ignored: values must be a list of strings")
+      return
+    }
+    client.removeFromCustomPropertySet(key, items)
   }
 
   override fun removeCustomProperty(key: String) {
@@ -539,6 +561,16 @@ class AmplyModule(reactContext: ReactApplicationContext) :
     }
   }
 
+  /** The items as strings, or null when any of them is not a string (the whole call is refused). */
+  private fun ReadableArray.toStringItems(): List<String>? {
+    val items = ArrayList<String>(size())
+    for (index in 0 until size()) {
+      if (getType(index) != ReadableType.String) return null
+      items.add(getString(index) ?: return null)
+    }
+    return items
+  }
+
   private fun Double.toNormalizedNumber(): Number {
     val longValue = toLong()
     return if (this == longValue.toDouble()) {
@@ -578,5 +610,7 @@ class AmplyModule(reactContext: ReactApplicationContext) :
     private const val CAMPAIGN_TOUCH_ERROR = "AMP_CAMPAIGN_TOUCH_FAILED"
     private const val DATASET_ERROR = "AMP_DATASET_FAILED"
     private const val CUSTOM_PROP_ERROR = "AMP_CUSTOM_PROP_FAILED"
+
+    private const val FORWARD_ARRAYS_AS_SETS_KEY = "forwardArraysAsSets"
   }
 }

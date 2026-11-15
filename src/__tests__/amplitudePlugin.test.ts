@@ -4,7 +4,7 @@
  * limits) lives in the native SDK and is not tested here. The queue is in amplitudePluginQueue.test.ts.
  */
 import type {AmplitudeEventLike, AmplyPluginOptions} from '../amplitudePlugin';
-import {eventOf, identifyEvent, install, load, names, settle} from './amplitudePluginHarness';
+import {CONFIG, eventOf, identifyEvent, install, load, names, settle} from './amplitudePluginHarness';
 
 describe('amplyPlugin pipeline', () => {
   let warn: jest.SpyInstance;
@@ -577,6 +577,130 @@ describe('amplyPlugin pipeline', () => {
       await settle();
 
       expect(forwardEvent.mock.calls[0][0].properties).toEqual({plan: 'pro'});
+    });
+  });
+
+  describe('forwardArraysAsSets', () => {
+    const LISTS = {plan: 'pro', tags: ['a', 'b'], ids: [1, 2, 1.5, -3, 0]};
+    const LISTS_ON_THE_BRIDGE = {plan: 'pro', tags: ['a', 'b'], ids: ['1', '2', '1.5', '-3', '0']};
+
+    it.each<[string, AmplyPluginOptions | undefined]>([
+      ['not given', undefined],
+      ['false', {forwardArraysAsSets: false}],
+    ])('%s sends exactly the payload it always did, with no flag', async (_, options) => {
+      const {Amply, forwardEvent} = load();
+      const plugin = await install(Amply, options);
+
+      await plugin.execute(eventOf('Purchase', LISTS));
+      await settle();
+
+      expect(forwardEvent.mock.calls).toStrictEqual([
+        [{source: 'amplitude', name: 'Purchase', properties: LISTS_ON_THE_BRIDGE}],
+      ]);
+    });
+
+    it('true asks native for sets and hands it the arrays whole, integers as text without .0', async () => {
+      const {Amply, forwardEvent} = load();
+      const plugin = await install(Amply, {forwardArraysAsSets: true});
+
+      await plugin.execute(eventOf('Purchase', LISTS));
+      await settle();
+
+      expect(forwardEvent.mock.calls).toStrictEqual([
+        [{source: 'amplitude', name: 'Purchase', properties: LISTS_ON_THE_BRIDGE, forwardArraysAsSets: true}],
+      ]);
+    });
+
+    it('only a real true turns it on', async () => {
+      const {Amply, forwardEvent} = load();
+      const plugin = await install(Amply, {forwardArraysAsSets: 'yes' as unknown as boolean});
+
+      await plugin.execute(eventOf('Purchase', LISTS));
+      await settle();
+
+      expect(forwardEvent.mock.calls[0][0]).not.toHaveProperty('forwardArraysAsSets');
+    });
+
+    it('an event with no arrays carries the flag too, native decides per value', async () => {
+      const {Amply, forwardEvent} = load();
+      const plugin = await install(Amply, {forwardArraysAsSets: true});
+
+      await plugin.execute(eventOf('app_open'));
+      await settle();
+
+      expect(forwardEvent).toHaveBeenCalledWith({
+        source: 'amplitude',
+        name: 'app_open',
+        properties: {},
+        forwardArraysAsSets: true,
+      });
+    });
+
+    it('what the plugin drops in an array it still drops, the event goes on', async () => {
+      const {Amply, forwardEvent} = load();
+      const plugin = await install(Amply, {forwardArraysAsSets: true});
+
+      await plugin.execute(eventOf('Purchase', {plan: 'pro', withNull: ['a', null], odd: ['a', NaN]}));
+      await settle();
+
+      expect(forwardEvent.mock.calls[0][0]).toStrictEqual({
+        source: 'amplitude',
+        name: 'Purchase',
+        properties: {plan: 'pro'},
+        forwardArraysAsSets: true,
+      });
+    });
+
+    it('properties from transform carry the flag', async () => {
+      const {Amply, forwardEvent} = load();
+      const plugin = await install(Amply, {
+        forwardArraysAsSets: true,
+        transform: () => ({name: 'renamed', properties: {tags: [7, 'x']}}),
+      });
+
+      await plugin.execute(eventOf('Purchase'));
+      await settle();
+
+      expect(forwardEvent.mock.calls[0][0]).toStrictEqual({
+        source: 'amplitude',
+        name: 'renamed',
+        properties: {tags: ['7', 'x']},
+        forwardArraysAsSets: true,
+      });
+    });
+
+    it('an event parked until Amply is up keeps the flag', async () => {
+      const sdk = load({}, false);
+      const plugin = await install(sdk.Amply, {forwardArraysAsSets: true});
+      await plugin.execute(eventOf('Purchase', {tags: ['a']}));
+      await settle();
+      expect(sdk.forwardEvent).not.toHaveBeenCalled();
+
+      sdk.state.isUp = true;
+      await sdk.Amply.initialize(CONFIG as never);
+      await settle();
+
+      expect(sdk.forwardEvent.mock.calls[0][0]).toStrictEqual({
+        source: 'amplitude',
+        name: 'Purchase',
+        properties: {tags: ['a']},
+        forwardArraysAsSets: true,
+      });
+    });
+
+    it('each plugin keeps its own setting', async () => {
+      const {Amply, forwardEvent} = load();
+      const withSets = await install(Amply, {forwardArraysAsSets: true}, {});
+      const withoutSets = await install(Amply, undefined, {});
+
+      await withSets.execute(eventOf('one', {tags: ['a']}));
+      await withoutSets.execute(eventOf('two', {tags: ['a']}));
+      await settle();
+
+      expect(forwardEvent.mock.calls.map(([payload]) => [payload.name, payload.forwardArraysAsSets])).toEqual([
+        ['one', true],
+        ['two', undefined],
+      ]);
     });
   });
 

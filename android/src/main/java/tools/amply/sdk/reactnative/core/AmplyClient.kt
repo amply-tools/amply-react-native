@@ -28,7 +28,16 @@ interface AmplyClient {
 
   suspend fun track(name: String, properties: Map<String, Any?>?)
 
-  suspend fun forwardEvent(source: String, name: String, properties: Map<String, Any?>?)
+  /**
+   * [forwardArraysAsSets] `true` asks the native SDK to keep lists as string sets; `false` is the
+   * joined `"a,b,c"` string, through exactly the call made before the option existed.
+   */
+  suspend fun forwardEvent(
+    source: String,
+    name: String,
+    properties: Map<String, Any?>?,
+    forwardArraysAsSets: Boolean = false,
+  )
 
   /**
    * Gated form of track. Wraps the KMP `suspend fun trackGated(event, props): GateDecision`:
@@ -92,6 +101,9 @@ interface AmplyClient {
 
   fun setCustomProperty(key: String, value: Any)
   fun setCustomProperties(properties: Map<String, Any?>)
+  /** The SDK's atomic set mutations. Buffered until initialisation like the other property calls. */
+  fun addToCustomPropertySet(key: String, values: List<String>)
+  fun removeFromCustomPropertySet(key: String, values: List<String>)
   fun removeCustomProperty(key: String)
   fun clearCustomProperties()
   suspend fun getCustomProperty(key: String): Any?

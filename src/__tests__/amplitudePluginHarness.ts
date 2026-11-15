@@ -2,7 +2,12 @@
 import type {AmplitudeEventLike, AmplyPluginOptions} from '../amplitudePlugin';
 
 export type SdkModule = typeof import('../index') & typeof import('../amplitudePlugin');
-export type Payload = {source: string; name: string; properties?: Record<string, unknown> | null};
+export type Payload = {
+  source: string;
+  name: string;
+  properties?: Record<string, unknown> | null;
+  forwardArraysAsSets?: boolean | null;
+};
 
 export const CONFIG = {apiKeyPublic: 'pub', apiKeySecret: 'sec', appId: 'app'};
 
@@ -22,6 +27,8 @@ export function load(overrides: Record<string, unknown> = {}, isUp = true) {
   const setUserId = jest.fn<void, [string | null]>();
   const setCustomProperties = jest.fn<void, [Record<string, unknown>]>();
   const removeCustomProperty = jest.fn<void, [string]>();
+  const addToCustomPropertySet = jest.fn<void, [string, string[]]>();
+  const removeFromCustomPropertySet = jest.fn<void, [string, string[]]>();
   const native = {
     isInitialized: () => state.isUp,
     initialize: jest.fn(async () => {
@@ -31,6 +38,8 @@ export function load(overrides: Record<string, unknown> = {}, isUp = true) {
     setUserId,
     setCustomProperties,
     removeCustomProperty,
+    addToCustomPropertySet,
+    removeFromCustomPropertySet,
     ...overrides,
   };
   let Amply!: SdkModule;
@@ -39,7 +48,16 @@ export function load(overrides: Record<string, unknown> = {}, isUp = true) {
     require('../nativeModule').__setNativeModule(native as never);
     Amply = requireSdk();
   });
-  return {Amply, state, forwardEvent, setUserId, setCustomProperties, removeCustomProperty};
+  return {
+    Amply,
+    state,
+    forwardEvent,
+    setUserId,
+    setCustomProperties,
+    removeCustomProperty,
+    addToCustomPropertySet,
+    removeFromCustomPropertySet,
+  };
 }
 
 export function loadWithoutNativeModule(): SdkModule {
@@ -135,6 +153,8 @@ export function bridgeCalls(sdk: Sdk): string[] {
     ...entries(sdk.setUserId, ([id]) => `id:${String(id)}`),
     ...entries(sdk.setCustomProperties, ([map]) => `set:${JSON.stringify(map)}`),
     ...entries(sdk.removeCustomProperty, ([key]) => `unset:${String(key)}`),
+    ...entries(sdk.addToCustomPropertySet, ([key, values]) => `add:${String(key)}:${JSON.stringify(values)}`),
+    ...entries(sdk.removeFromCustomPropertySet, ([key, values]) => `remove:${String(key)}:${JSON.stringify(values)}`),
   ]
     .sort((a, b) => a.order - b.order)
     .map((entry) => entry.text);

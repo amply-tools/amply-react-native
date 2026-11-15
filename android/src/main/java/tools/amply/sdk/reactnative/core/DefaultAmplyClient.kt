@@ -181,12 +181,19 @@ class DefaultAmplyClient(
   override suspend fun forwardEvent(
     source: String,
     name: String,
-    properties: Map<String, Any?>?
+    properties: Map<String, Any?>?,
+    forwardArraysAsSets: Boolean,
   ) {
     val instance = requireInstance()
     withContext(Dispatchers.IO) {
       android.util.Log.d("AmplyReactNative", "Forwarding event '$name' from '$source'")
-      instance.trackForwarded(source, name, properties?.toNonNullMap() ?: emptyMap())
+      val nonNullProperties = properties?.toNonNullMap() ?: emptyMap()
+      if (forwardArraysAsSets) {
+        instance.trackForwarded(source, name, nonNullProperties, forwardArraysAsSets = true)
+      } else {
+        // Off stays the call it always was.
+        instance.trackForwarded(source, name, nonNullProperties)
+      }
     }
   }
 
@@ -459,6 +466,34 @@ class DefaultAmplyClient(
         android.util.Log.i("AmplyReactNative", "Buffering setCustomProperties until init: ${properties.keys}")
         val snapshot = properties.toNonNullMap()
         pendingPropertyOps.add { it.setCustomProperties(snapshot) }
+      }
+    }
+  }
+
+  override fun addToCustomPropertySet(key: String, values: List<String>) {
+    val snapshot = values.toList()
+    synchronized(propertyLock) {
+      val instance = amplyInstance
+      if (instance != null) {
+        instance.addToCustomPropertySet(key, snapshot)
+        android.util.Log.i("AmplyReactNative", "Custom property set items added: $key")
+      } else {
+        android.util.Log.i("AmplyReactNative", "Buffering addToCustomPropertySet until init: $key")
+        pendingPropertyOps.add { it.addToCustomPropertySet(key, snapshot) }
+      }
+    }
+  }
+
+  override fun removeFromCustomPropertySet(key: String, values: List<String>) {
+    val snapshot = values.toList()
+    synchronized(propertyLock) {
+      val instance = amplyInstance
+      if (instance != null) {
+        instance.removeFromCustomPropertySet(key, snapshot)
+        android.util.Log.i("AmplyReactNative", "Custom property set items removed: $key")
+      } else {
+        android.util.Log.i("AmplyReactNative", "Buffering removeFromCustomPropertySet until init: $key")
+        pendingPropertyOps.add { it.removeFromCustomPropertySet(key, snapshot) }
       }
     }
   }

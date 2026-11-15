@@ -78,6 +78,7 @@ namespace JS {
       NSString *source() const;
       NSString *name() const;
       id<NSObject> _Nullable properties() const;
+      std::optional<bool> forwardArraysAsSets() const;
 
       ForwardEventPayload(NSDictionary *const v) : _v(v) {}
     private:
@@ -127,6 +128,10 @@ namespace JS {
 - (void)setLogLevel:(NSString *)level;
 - (NSString *)getLogLevel;
 - (void)setCustomProperties:(NSDictionary *)properties;
+- (void)addToCustomPropertySet:(NSString *)key
+                        values:(NSArray *)values;
+- (void)removeFromCustomPropertySet:(NSString *)key
+                             values:(NSArray *)values;
 - (void)getCustomProperty:(NSString *)key
                   resolve:(RCTPromiseResolveBlock)resolve
                    reject:(RCTPromiseRejectBlock)reject;
@@ -231,6 +236,11 @@ inline id<NSObject> _Nullable JS::NativeAmplyModule::ForwardEventPayload::proper
 {
   id const p = _v[@"properties"];
   return p;
+}
+inline std::optional<bool> JS::NativeAmplyModule::ForwardEventPayload::forwardArraysAsSets() const
+{
+  id const p = _v[@"forwardArraysAsSets"];
+  return RCTBridgingToOptionalBool(p);
 }
 NS_ASSUME_NONNULL_END
 #endif // AmplyReactNative_H
