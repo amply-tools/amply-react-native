@@ -13,7 +13,7 @@
 
 import PackageDescription
 
-let amplySdkVersion: Version = "0.18.0"
+let amplySdkVersion: Version = "0.19.0"
 
 let package = Package(
     name: "AmplyReactNative",
