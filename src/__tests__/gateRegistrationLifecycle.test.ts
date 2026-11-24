@@ -18,13 +18,8 @@ async function flushMicrotasks(): Promise<void> {
  * The registration lifecycle of a gate: who receives a presentation, what withdrawal
  * actually withdraws, and what happens to a registration made before the SDK is up.
  *
- * All three were found on 2026-07-31 — the first two by reading the bridge after a field
- * report on Happens, the third by the field report itself. They share one cause: the JS side
- * keeps its own record of what is registered natively, and that record was written
- * optimistically and never reconciled.
- *
- * Trello: gate eviction https://trello.com/c/Gq589zwz, withdrawal
- * https://trello.com/c/saf8I9c6, pre-init registration https://trello.com/c/TZCixnYi
+ * All three share one cause: the JS side keeps its own record of what is registered
+ * natively, and that record was written optimistically and never reconciled.
  */
 describe('gate registration lifecycle', () => {
   /** Every listener currently attached to the shared onCampaignPresent channel. */
@@ -83,7 +78,7 @@ describe('gate registration lifecycle', () => {
   /** Delivers one presentation to every listener currently subscribed to the channel. */
   function emitPresentation(mediationId = 'm1'): void {
     const event: CampaignPresentEvent = {
-      url: 'stillframe://ad?adUnit=main',
+      url: 'myapp://ad?adUnit=main',
       params: {adUnit: 'main'},
       info: {campaignId: 'c1'},
       mediationId,
@@ -96,8 +91,8 @@ describe('gate registration lifecycle', () => {
       const first = jest.fn((_p, _i, r: Amply.GateResolution) => r.completed());
       const second = jest.fn((_p, _i, r: Amply.GateResolution) => r.completed());
 
-      await Amply.registerGate('stillframe://ad', first);
-      await Amply.registerGate('stillframe://ad', second);
+      await Amply.registerGate('myapp://ad', first);
+      await Amply.registerGate('myapp://ad', second);
 
       emitPresentation();
       await flushMicrotasks();
@@ -109,11 +104,11 @@ describe('gate registration lifecycle', () => {
     });
 
     it('applies the options of the newest registration', async () => {
-      await Amply.registerGate('stillframe://ad', jest.fn(), {
+      await Amply.registerGate('myapp://ad', jest.fn(), {
         onAbort: 'cancel',
         timeoutMs: 1000,
       });
-      await Amply.registerGate('stillframe://ad', jest.fn(), {
+      await Amply.registerGate('myapp://ad', jest.fn(), {
         onAbort: 'proceed',
         timeoutMs: 8000,
       });
@@ -121,7 +116,7 @@ describe('gate registration lifecycle', () => {
       // Previously the second call was a no-op natively, so its onAbort and timeout were
       // silently discarded and the gate kept running under the first call's policy.
       expect(mockNativeModule.registerGate).toHaveBeenLastCalledWith(
-        'stillframe://ad',
+        'myapp://ad',
         'proceed',
         8000,
       );
@@ -131,8 +126,8 @@ describe('gate registration lifecycle', () => {
       const ad = jest.fn((_p, _i, r: Amply.GateResolution) => r.completed());
       const paywall = jest.fn((_p, _i, r: Amply.GateResolution) => r.completed());
 
-      await Amply.registerGate('stillframe://ad', ad);
-      await Amply.registerGate('stillframe://paywall', paywall);
+      await Amply.registerGate('myapp://ad', ad);
+      await Amply.registerGate('myapp://paywall', paywall);
 
       emitPresentation();
       await flushMicrotasks();
@@ -145,21 +140,21 @@ describe('gate registration lifecycle', () => {
 
   describe('withdrawal (saf8I9c6)', () => {
     it('withdraws the native gate, not just the JS subscription', async () => {
-      const unsubscribe = await Amply.registerGate('stillframe://ad', jest.fn());
+      const unsubscribe = await Amply.registerGate('myapp://ad', jest.fn());
 
       unsubscribe();
 
       // Without this the gate outlives its presenter and parks the next gated call on that
       // URL for the whole fail-open timeout — silently, with no crash and no console trace.
-      expect(mockNativeModule.unregisterGate).toHaveBeenCalledWith('stillframe://ad');
+      expect(mockNativeModule.unregisterGate).toHaveBeenCalledWith('myapp://ad');
     });
 
     it('lets the same baseUrl be registered again after withdrawal', async () => {
-      const unsubscribe = await Amply.registerGate('stillframe://ad', jest.fn());
+      const unsubscribe = await Amply.registerGate('myapp://ad', jest.fn());
       unsubscribe();
 
       const presenter = jest.fn((_p, _i, r: Amply.GateResolution) => r.completed());
-      await Amply.registerGate('stillframe://ad', presenter);
+      await Amply.registerGate('myapp://ad', presenter);
 
       emitPresentation();
       await flushMicrotasks();
@@ -173,10 +168,10 @@ describe('gate registration lifecycle', () => {
      * URL now — killing its replacement. A stale handle must be inert, not destructive.
      */
     it('an evicted registration\'s unsubscribe does not withdraw its replacement', async () => {
-      const withdrawFirst = await Amply.registerGate('stillframe://ad', jest.fn());
+      const withdrawFirst = await Amply.registerGate('myapp://ad', jest.fn());
 
       const second = jest.fn((_p, _i, r: Amply.GateResolution) => r.completed());
-      await Amply.registerGate('stillframe://ad', second);
+      await Amply.registerGate('myapp://ad', second);
       mockNativeModule.unregisterGate.mockClear();
 
       withdrawFirst();
@@ -189,7 +184,7 @@ describe('gate registration lifecycle', () => {
     });
 
     it('is idempotent — a second call withdraws nothing further', async () => {
-      const unsubscribe = await Amply.registerGate('stillframe://ad', jest.fn());
+      const unsubscribe = await Amply.registerGate('myapp://ad', jest.fn());
 
       unsubscribe();
       unsubscribe();
@@ -198,15 +193,15 @@ describe('gate registration lifecycle', () => {
     });
 
     it('removeAllListeners withdraws every native gate too', async () => {
-      await Amply.registerGate('stillframe://ad', jest.fn());
-      await Amply.registerGate('stillframe://paywall', jest.fn());
+      await Amply.registerGate('myapp://ad', jest.fn());
+      await Amply.registerGate('myapp://paywall', jest.fn());
 
       Amply.removeAllListeners();
 
       // It used to clear the JS bookkeeping only, leaving JS believing nothing was
       // registered while both gates were still live natively.
-      expect(mockNativeModule.unregisterGate).toHaveBeenCalledWith('stillframe://ad');
-      expect(mockNativeModule.unregisterGate).toHaveBeenCalledWith('stillframe://paywall');
+      expect(mockNativeModule.unregisterGate).toHaveBeenCalledWith('myapp://ad');
+      expect(mockNativeModule.unregisterGate).toHaveBeenCalledWith('myapp://paywall');
     });
   });
 
@@ -215,7 +210,7 @@ describe('gate registration lifecycle', () => {
       mockNativeModule.isInitialized.mockReturnValue(false);
 
       const presenter = jest.fn((_p, _i, r: Amply.GateResolution) => r.completed());
-      await Amply.registerGate('stillframe://ad', presenter);
+      await Amply.registerGate('myapp://ad', presenter);
 
       // Native refuses while uninitialised; JS must not record that as done.
       expect(mockNativeModule.registerGate).not.toHaveBeenCalled();
@@ -223,7 +218,7 @@ describe('gate registration lifecycle', () => {
       mockNativeModule.isInitialized.mockReturnValue(true);
       await Amply.initialize({appId: 'a', apiKeyPublic: 'k', apiKeySecret: 's'});
 
-      expect(mockNativeModule.registerGate).toHaveBeenCalledWith('stillframe://ad', 'cancel', 0);
+      expect(mockNativeModule.registerGate).toHaveBeenCalledWith('myapp://ad', 'cancel', 0);
 
       emitPresentation();
       await flushMicrotasks();
@@ -253,8 +248,8 @@ describe('gate registration lifecycle', () => {
 
       const first = jest.fn((_p, _i, r: Amply.GateResolution) => r.completed());
       const second = jest.fn((_p, _i, r: Amply.GateResolution) => r.completed());
-      await Amply.registerGate('stillframe://ad', first);
-      await Amply.registerGate('stillframe://ad', second);
+      await Amply.registerGate('myapp://ad', first);
+      await Amply.registerGate('myapp://ad', second);
 
       mockNativeModule.isInitialized.mockReturnValue(true);
       await Amply.initialize({appId: 'a', apiKeyPublic: 'k', apiKeySecret: 's'});
@@ -269,7 +264,7 @@ describe('gate registration lifecycle', () => {
     it('withdrawing a queued gate cancels it instead of replaying it', async () => {
       mockNativeModule.isInitialized.mockReturnValue(false);
 
-      const unsubscribe = await Amply.registerGate('stillframe://ad', jest.fn());
+      const unsubscribe = await Amply.registerGate('myapp://ad', jest.fn());
       unsubscribe();
 
       mockNativeModule.isInitialized.mockReturnValue(true);

@@ -47,7 +47,7 @@ describe('a gate presenter that throws', () => {
 
   function present(): void {
     emitters.forEach((emit) =>
-      emit({url: 'stillframe://ad', params: {}, info: {campaignId: 'c1'}, mediationId: 'm1'}),
+      emit({url: 'myapp://ad', params: {}, info: {campaignId: 'c1'}, mediationId: 'm1'}),
     );
   }
 
@@ -78,7 +78,7 @@ describe('a gate presenter that throws', () => {
     const spies = (['warn', 'error', 'log', 'info', 'debug'] as const).map((method) =>
       jest.spyOn(console, method).mockImplementation(() => {}),
     );
-    await Amply.registerGate('stillframe://ad', () => {
+    await Amply.registerGate('myapp://ad', () => {
       throw new Error(`Invalid email: ${secret}`);
     });
 
@@ -92,7 +92,7 @@ describe('a gate presenter that throws', () => {
 
   it('names the error class so the integrator can still find the bug', async () => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
-    await Amply.registerGate('stillframe://ad', () => {
+    await Amply.registerGate('myapp://ad', () => {
       throw new TypeError(`Invalid email: ${secret}`);
     });
 
@@ -118,7 +118,7 @@ describe('a gate presenter that throws', () => {
     ],
   ])('stays fixed for %s', async (_, makeThrown) => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
-    await Amply.registerGate('stillframe://ad', () => {
+    await Amply.registerGate('myapp://ad', () => {
       throw makeThrown();
     });
 

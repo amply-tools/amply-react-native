@@ -139,32 +139,31 @@ describe('Amply gate API (trackGated + registerGate)', () => {
       mockNativeModule.onCampaignPresent.mockReturnValue({remove});
 
       const presenter = jest.fn();
-      const unsubscribe = await Amply.registerGate('stillframe://ad', presenter);
+      const unsubscribe = await Amply.registerGate('myapp://ad', presenter);
 
       expect(mockNativeModule.registerGate).toHaveBeenCalledTimes(1);
-      expect(mockNativeModule.registerGate).toHaveBeenCalledWith('stillframe://ad', 'cancel', 0);
+      expect(mockNativeModule.registerGate).toHaveBeenCalledWith('myapp://ad', 'cancel', 0);
       expect(mockNativeModule.onCampaignPresent).toHaveBeenCalledTimes(1);
 
       unsubscribe();
       expect(remove).toHaveBeenCalledTimes(1);
-      expect(mockNativeModule.unregisterGate).toHaveBeenCalledWith('stillframe://ad');
+      expect(mockNativeModule.unregisterGate).toHaveBeenCalledWith('myapp://ad');
     });
 
     // This used to assert the opposite — that a second registration re-subscribed but did
     // NOT re-register natively. That encoded the defect: the second subscriber joined the
     // shared onCampaignPresent channel while the first stayed on it, so one presentation was
     // handed to both presenters, and the second call's onAbort/timeout were silently dropped.
-    // See https://trello.com/c/Gq589zwz; the full behaviour is covered in
-    // gateRegistrationLifecycle.test.ts.
+    // The full behaviour is covered in gateRegistrationLifecycle.test.ts.
     it('replaces the previous registration when the same baseUrl is registered again', async () => {
       mockNativeModule.onCampaignPresent.mockReturnValue({remove: jest.fn()});
 
-      await Amply.registerGate('stillframe://ad', jest.fn());
-      await Amply.registerGate('stillframe://ad', jest.fn(), {timeoutMs: 5000});
+      await Amply.registerGate('myapp://ad', jest.fn());
+      await Amply.registerGate('myapp://ad', jest.fn(), {timeoutMs: 5000});
 
-      expect(mockNativeModule.unregisterGate).toHaveBeenCalledWith('stillframe://ad');
+      expect(mockNativeModule.unregisterGate).toHaveBeenCalledWith('myapp://ad');
       expect(mockNativeModule.registerGate).toHaveBeenLastCalledWith(
-        'stillframe://ad',
+        'myapp://ad',
         'cancel',
         5000,
       );
@@ -173,12 +172,12 @@ describe('Amply gate API (trackGated + registerGate)', () => {
     it('passes through onAbort and timeoutMs options', async () => {
       mockNativeModule.onCampaignPresent.mockReturnValue({remove: jest.fn()});
 
-      await Amply.registerGate('stillframe://ad', jest.fn(), {
+      await Amply.registerGate('myapp://ad', jest.fn(), {
         onAbort: 'proceed',
         timeoutMs: 8000,
       });
 
-      expect(mockNativeModule.registerGate).toHaveBeenCalledWith('stillframe://ad', 'proceed', 8000);
+      expect(mockNativeModule.registerGate).toHaveBeenCalledWith('myapp://ad', 'proceed', 8000);
     });
 
     it('delivers params + info to the presenter and forwards completed', async () => {
@@ -193,11 +192,11 @@ describe('Amply gate API (trackGated + registerGate)', () => {
       const presenter = jest.fn(
         (_params, _info, resolution: Amply.GateResolution) => resolution.completed(),
       );
-      await Amply.registerGate('stillframe://ad', presenter);
+      await Amply.registerGate('myapp://ad', presenter);
 
       expect(emit).toBeDefined();
       emit!({
-        url: 'stillframe://ad?adUnit=rewarded_main',
+        url: 'myapp://ad?adUnit=rewarded_main',
         params: {adUnit: 'rewarded_main'},
         info: {campaignId: 'c1'},
         mediationId: 'm1',
@@ -222,11 +221,11 @@ describe('Amply gate API (trackGated + registerGate)', () => {
         },
       );
 
-      await Amply.registerGate('stillframe://ad', (_p, _i, resolution) =>
+      await Amply.registerGate('myapp://ad', (_p, _i, resolution) =>
         resolution.dismissed(),
       );
 
-      emit!({url: 'stillframe://ad', params: {}, info: {}, mediationId: 'm2'});
+      emit!({url: 'myapp://ad', params: {}, info: {}, mediationId: 'm2'});
       await flushMicrotasks();
 
       expect(mockNativeModule.resolveCampaign).toHaveBeenCalledWith('m2', 'Dismissed');
@@ -241,11 +240,11 @@ describe('Amply gate API (trackGated + registerGate)', () => {
         },
       );
 
-      await Amply.registerGate('stillframe://ad', () => {
+      await Amply.registerGate('myapp://ad', () => {
         throw new Error('presenter blew up');
       });
 
-      emit!({url: 'stillframe://ad', params: {}, info: {}, mediationId: 'm3'});
+      emit!({url: 'myapp://ad', params: {}, info: {}, mediationId: 'm3'});
       await flushMicrotasks();
 
       expect(mockNativeModule.resolveCampaign).toHaveBeenCalledWith('m3', 'Unavailable');
@@ -260,12 +259,12 @@ describe('Amply gate API (trackGated + registerGate)', () => {
         },
       );
 
-      await Amply.registerGate('stillframe://ad', (_p, _i, resolution) => {
+      await Amply.registerGate('myapp://ad', (_p, _i, resolution) => {
         resolution.completed();
         resolution.dismissed();
       });
 
-      emit!({url: 'stillframe://ad', params: {}, info: {}, mediationId: 'm4'});
+      emit!({url: 'myapp://ad', params: {}, info: {}, mediationId: 'm4'});
       await flushMicrotasks();
 
       expect(mockNativeModule.resolveCampaign).toHaveBeenCalledTimes(1);
@@ -282,7 +281,7 @@ describe('Amply gate API (trackGated + registerGate)', () => {
       );
 
       const presenter = jest.fn();
-      await Amply.registerGate('stillframe://ad', presenter);
+      await Amply.registerGate('myapp://ad', presenter);
 
       emit!({url: 'other://thing', params: {}, info: {}, mediationId: 'm5'});
       await flushMicrotasks();

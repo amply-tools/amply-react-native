@@ -1,6 +1,6 @@
 /**
- * amplyPlugin against the real Amplitude core, the oldest line we claim (2.27.0, Seabook and
- * Happens run it) and a current one (2.61.0). A failure here means Amplitude drifted from what the
+ * amplyPlugin against the real Amplitude core, the oldest line we claim (2.27.0) and a
+ * current one (2.61.0). A failure here means Amplitude drifted from what the
  * spec assumes: fix the spec and the plugin, not the test.
  *
  * Acceptance map (spec §17): the whole file is A9, the matrix on both versions. A14 is
