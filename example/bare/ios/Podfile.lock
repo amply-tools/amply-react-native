@@ -1,7 +1,7 @@
 PODS:
   - amplitude-react-native (1.13.0):
     - React-Core
-  - AmplyReactNative (0.21.0):
+  - AmplyReactNative (0.22.0):
     - React-Core
     - React-RCTFabric
     - ReactCommon/turbomodule/core
@@ -2708,7 +2708,7 @@ EXTERNAL SOURCES:
 
 SPEC CHECKSUMS:
   amplitude-react-native: 456e34c57f8b3f4cc572f7d5e4219077639c5f37
-  AmplyReactNative: f5c63a19a1be9a5583aa7a62b00407f4531ffb9b
+  AmplyReactNative: 89a017c5e30aac2d7ac00fbcb7cd4ded8a6fc84d
   boost: 7e761d76ca2ce687f7cc98e698152abd03a18f90
   DoubleConversion: cb417026b2400c8f53ae97020b2be961b59470cb
   fast_float: b32c788ed9c6a8c584d114d0047beda9664e7cc6

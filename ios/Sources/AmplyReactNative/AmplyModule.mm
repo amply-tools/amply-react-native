@@ -9,6 +9,7 @@
 #import <React/RCTLog.h>
 #import <ReactCommon/RCTTurboModule.h>
 #import "AmplyReactNative/AmplyReactNative.h"
+#import "AmplyBridgeValues.h"
 
 // Import the KMP SDK
 #import <AmplySDK/AmplySDK.h>
@@ -98,7 +99,9 @@ static ASDKCampaignResult* AmplyCampaignResultFromString(NSString *result) {
 // one gate per URL may be registered — the JS side evicts before it registers again.
 @property (nonatomic, strong) NSMutableDictionary<NSString *, ASDKListenerToken *> *gateTokensByBaseUrl;
 @property (nonatomic, assign) AmplyLogLevel currentLogLevel;
-@property (nonatomic, strong) NSMutableArray<void (^)(ASDKAmply *)> *pendingPropertyOps;
+// Property calls made before initialize, replayed by it. Every entry is already @try-guarded
+// (-applyPropertyOp:named:key:), and the drain guards each one again.
+@property (nonatomic, strong) NSMutableArray<void (^)(id)> *pendingPropertyOps;
 // Global routing table: mediationId -> the KMP CampaignResolution token awaiting a JS reply.
 // Shared across every registered gate because resolveCampaign(mediationId) routes by exact id —
 // that lookup is correct regardless of which gate minted the id. Guarded by @synchronized(self).
@@ -297,13 +300,17 @@ static BOOL AmplyIsBlank(NSString *value)
     // Register for app lifecycle notifications to manage session state
     [self registerLifecycleObservers];
 
-    // Drain buffered property operations
+    // Drain buffered property operations. Taken out of the list first and run one by one, each
+    // inside its own @try: an op that raised used to abort the loop here, so every op after it was
+    // never replayed, the list was never cleared, and initialize rejected while isInitialized
+    // already answered YES. The Android bridge drains the same way (DefaultAmplyClient).
     if (self.pendingPropertyOps.count > 0) {
-      RCTLogInfo(@"[AmplyReactNative] Draining %lu buffered property operations", (unsigned long)self.pendingPropertyOps.count);
-      for (void (^op)(ASDKAmply *) in self.pendingPropertyOps) {
-        op(self.amplyInstance);
-      }
+      NSArray<void (^)(id)> *ops = [self.pendingPropertyOps copy];
       [self.pendingPropertyOps removeAllObjects];
+      RCTLogInfo(@"[AmplyReactNative] Draining %lu buffered property operations", (unsigned long)ops.count);
+      AmplyRunEachGuarded(ops, self.amplyInstance, ^(NSUInteger index, NSException *exception) {
+        RCTLogWarn(@"[AmplyReactNative] Buffered property operation #%lu failed: %@", (unsigned long)index, exception.reason);
+      });
     }
 
     RCTLogInfo(@"[AmplyReactNative] Initialized with appId=%@", appId);
@@ -713,7 +720,7 @@ static NSDictionary *AmplyGateDecisionToMap(ASDKGateDecision *decision) {
       eventDict[@"name"] = event.name;
       eventDict[@"timestamp"] = @(event.timestamp);
       eventDict[@"type"] = event.type.name;
-      eventDict[@"properties"] = event.properties ?: @{};
+      eventDict[@"properties"] = AmplyJSDictionaryFromNative(event.properties);
       [result addObject:eventDict];
     }
 
@@ -908,7 +915,7 @@ static ASDKDataSetType *AmplyDataSetTypeFromDictionary(NSDictionary *type, NSStr
     RCTLogInfo(@"[AmplyReactNative] Got dataset snapshot, keys: %@", [snapshot allKeys]);
 
     if (resolve) {
-      resolve(snapshot ?: @{});
+      resolve(AmplyJSDictionaryFromNative(snapshot));
     }
   }];
 }
@@ -977,7 +984,7 @@ static ASDKDataSetType *AmplyDataSetTypeFromDictionary(NSDictionary *type, NSStr
 
   NSDictionary *payload = @{
     @"url": url ?: @"",
-    @"info": info ?: @{},
+    @"info": AmplyJSDictionaryFromNative(info),
     @"consumed": @NO
   };
 
@@ -992,23 +999,16 @@ static ASDKDataSetType *AmplyDataSetTypeFromDictionary(NSDictionary *type, NSStr
 
 - (void)setCustomProperties:(NSDictionary *)properties
 {
-  void (^apply)(ASDKAmply *) = ^(ASDKAmply *instance) {
+  NSString *keys = [properties.allKeys componentsJoinedByString:@", "];
+  [self applyPropertyOp:^(ASDKAmply *instance) {
     for (NSString *key in properties) {
       id value = properties[key];
       if (value && ![value isKindOfClass:[NSNull class]]) {
         [instance setCustomPropertyKey:key value:value];
       }
     }
-    RCTLogInfo(@"[AmplyReactNative] Custom properties set: %@", [properties allKeys]);
-  };
-
-  if (self.amplyInstance) {
-    apply(self.amplyInstance);
-  } else {
-    RCTLogInfo(@"[AmplyReactNative] Buffering setCustomProperties until init: %@", [properties allKeys]);
-    if (!self.pendingPropertyOps) self.pendingPropertyOps = [NSMutableArray new];
-    [self.pendingPropertyOps addObject:apply];
-  }
+    RCTLogInfo(@"[AmplyReactNative] Custom properties set: %@", keys);
+  } named:@"setCustomProperties" key:keys];
 }
 
 - (void)getCustomProperty:(NSString *)key
@@ -1032,7 +1032,7 @@ static ASDKDataSetType *AmplyDataSetTypeFromDictionary(NSDictionary *type, NSStr
 
     NSMutableDictionary *result = [NSMutableDictionary dictionary];
     if (value && ![value isKindOfClass:[NSNull class]]) {
-      result[@"value"] = value;
+      result[@"value"] = AmplyJSValueFromNative(value);
     }
 
     if (resolve) {
@@ -1057,21 +1057,27 @@ static NSArray<NSString *> *AmplyStringItemsFromArray(id raw) {
   return [(NSArray<NSString *> *)raw copy];
 }
 
-/** Runs [apply] now, or parks it until initialize; @try keeps an ObjC exception out of the host app. */
+/**
+ * Runs [apply] now, or parks it until initialize; @try keeps an ObjC exception out of the host app.
+ * The one path for every buffered call — property, set, user id, language — so none of them can be
+ * the unguarded one. [key] is only for the log line: nil for a call whose argument is not loggable
+ * (a user id is often an email).
+ */
 - (void)applyPropertyOp:(void (^)(ASDKAmply *))apply named:(NSString *)name key:(NSString *)key
 {
+  NSString *label = key ? [NSString stringWithFormat:@"%@('%@')", name, key] : name;
   void (^guarded)(ASDKAmply *) = ^(ASDKAmply *instance) {
     @try {
       apply(instance);
     } @catch (NSException *exception) {
-      RCTLogWarn(@"[AmplyReactNative] %@('%@') failed: %@", name, key, exception.reason);
+      RCTLogWarn(@"[AmplyReactNative] %@ failed: %@", label, exception.reason);
     }
   };
 
   if (self.amplyInstance) {
     guarded(self.amplyInstance);
   } else {
-    RCTLogInfo(@"[AmplyReactNative] Buffering %@ until init: %@", name, key);
+    RCTLogInfo(@"[AmplyReactNative] Buffering %@ until init", label);
     if (!self.pendingPropertyOps) self.pendingPropertyOps = [NSMutableArray new];
     [self.pendingPropertyOps addObject:guarded];
   }
@@ -1105,34 +1111,18 @@ static NSArray<NSString *> *AmplyStringItemsFromArray(id raw) {
 
 - (void)removeCustomProperty:(NSString *)key
 {
-  void (^apply)(ASDKAmply *) = ^(ASDKAmply *instance) {
+  [self applyPropertyOp:^(ASDKAmply *instance) {
     [instance removeCustomPropertyKey:key];
     RCTLogInfo(@"[AmplyReactNative] Custom property removed: %@", key);
-  };
-
-  if (self.amplyInstance) {
-    apply(self.amplyInstance);
-  } else {
-    RCTLogInfo(@"[AmplyReactNative] Buffering removeCustomProperty until init: %@", key);
-    if (!self.pendingPropertyOps) self.pendingPropertyOps = [NSMutableArray new];
-    [self.pendingPropertyOps addObject:apply];
-  }
+  } named:@"removeCustomProperty" key:key];
 }
 
 - (void)clearCustomProperties
 {
-  void (^apply)(ASDKAmply *) = ^(ASDKAmply *instance) {
+  [self applyPropertyOp:^(ASDKAmply *instance) {
     [instance clearCustomProperties];
     RCTLogInfo(@"[AmplyReactNative] All custom properties cleared");
-  };
-
-  if (self.amplyInstance) {
-    apply(self.amplyInstance);
-  } else {
-    RCTLogInfo(@"[AmplyReactNative] Buffering clearCustomProperties until init");
-    if (!self.pendingPropertyOps) self.pendingPropertyOps = [NSMutableArray new];
-    [self.pendingPropertyOps addObject:apply];
-  }
+  } named:@"clearCustomProperties" key:nil];
 }
 
 - (void)addListener:(NSString *)eventName
@@ -1151,37 +1141,22 @@ static NSArray<NSString *> *AmplyStringItemsFromArray(id raw) {
 {
   // Buffered like the property calls above rather than dropped: an app that identifies the
   // user before `initialize` resolves used to lose that id on iOS without a word.
-  void (^apply)(ASDKAmply *) = ^(ASDKAmply *instance) {
+  // No value in any log line: ids are often emails, and the Amplitude plugin calls this on every
+  // login.
+  [self applyPropertyOp:^(ASDKAmply *instance) {
     [instance setUserIdUserId:userId];
-    // No value: ids are often emails, and the Amplitude plugin calls this on every login.
     RCTLogInfo(@"[AmplyReactNative] User ID %@", userId ? @"set" : @"cleared");
-  };
-
-  if (self.amplyInstance) {
-    apply(self.amplyInstance);
-  } else {
-    RCTLogInfo(@"[AmplyReactNative] Buffering setUserId until init");
-    if (!self.pendingPropertyOps) self.pendingPropertyOps = [NSMutableArray new];
-    [self.pendingPropertyOps addObject:apply];
-  }
+  } named:@"setUserId" key:nil];
 }
 
 - (void)setAppLanguage:(NSString *)tag
 {
   // Buffered like setUserId. The JS layer already holds a pre-init call and folds it into the
   // config, so this only catches a call that reaches native before the instance exists anyway.
-  void (^apply)(ASDKAmply *) = ^(ASDKAmply *instance) {
+  [self applyPropertyOp:^(ASDKAmply *instance) {
     [instance setAppLanguageTag:tag];
     RCTLogInfo(@"[AmplyReactNative] App language set to: %@", tag ?: @"<null>");
-  };
-
-  if (self.amplyInstance) {
-    apply(self.amplyInstance);
-  } else {
-    RCTLogInfo(@"[AmplyReactNative] Buffering setAppLanguage until init");
-    if (!self.pendingPropertyOps) self.pendingPropertyOps = [NSMutableArray new];
-    [self.pendingPropertyOps addObject:apply];
-  }
+  } named:@"setAppLanguage" key:tag];
 }
 
 - (void)setLogLevel:(NSString *)level
@@ -1383,7 +1358,7 @@ static NSArray<NSString *> *AmplyStringItemsFromArray(id raw) {
     @"name": event.name ?: @"",
     @"type": @"system",
     @"timestamp": @(event.timestamp),
-    @"properties": event.properties ?: @{}
+    @"properties": AmplyJSDictionaryFromNative(event.properties)
   };
 
   // Same boundary, same hazard as -onLogEntry:. The system-events channel is also called from
@@ -1420,7 +1395,7 @@ static NSArray<NSString *> *AmplyStringItemsFromArray(id raw) {
   properties[@"category"] = entry.category ?: @"sdk";
   properties[@"message"] = entry.message ?: @"";
   if (entry.details) {
-    properties[@"details"] = entry.details;
+    properties[@"details"] = AmplyJSDictionaryFromNative(entry.details);
   }
 
   NSDictionary *payload = @{
@@ -1494,8 +1469,8 @@ static NSArray<NSString *> *AmplyStringItemsFromArray(id raw) {
 
   NSDictionary *payload = @{
     @"url": url,
-    @"params": params ?: @{},
-    @"info": info ?: @{},
+    @"params": AmplyJSDictionaryFromNative(params),
+    @"info": AmplyJSDictionaryFromNative(info),
     @"mediationId": mediationId
   };
 

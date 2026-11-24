@@ -1,8 +1,8 @@
 {
   "name": "@amplytools/react-native-amply-sdk",
-  "version": "0.21.0",
+  "version": "0.22.0",
   "amply": {
-    "iosSdkVersion": "0.20.0"
+    "iosSdkVersion": "0.21.0"
   },
   "swiftpmConfig": {
     "name": "AmplyReactNative"
@@ -38,6 +38,7 @@
     "!dist/**/__tests__",
     "!src/**/__tests__",
     "!plugin/src/**/__tests__",
+    "!ios/Tests",
     "!**/*.tsbuildinfo"
   ],
   "scripts": {

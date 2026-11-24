@@ -13,7 +13,7 @@
 
 import PackageDescription
 
-let amplySdkVersion: Version = "0.20.0"
+let amplySdkVersion: Version = "0.21.0"
 
 let package = Package(
     name: "AmplyReactNative",
@@ -41,6 +41,7 @@ let package = Package(
             path: "Sources/AmplyReactNative",
             sources: [
                 "AmplyModule.mm",
+                "AmplyBridgeValues.mm",
                 "AmplyReactNative/AmplyReactNative-generated.mm",
             ],
             publicHeadersPath: "AmplyReactNative",

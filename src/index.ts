@@ -591,6 +591,25 @@ export async function trackGated(
   }
 }
 
+/** An error class name is an identifier; anything else in `name` may be data, so it is not printed. */
+const ERROR_CLASS_NAME = /^[A-Za-z_$][\w$]{0,63}$/;
+
+/**
+ * The class of something host code threw, safe to print: never its message, and `name` only when
+ * it looks like a class name. Total — a hostile `name` getter cannot make it throw.
+ */
+function hostErrorClass(error: unknown): string {
+  if (!(error instanceof Error)) {
+    return 'non-Error value';
+  }
+  try {
+    const name: unknown = error.name;
+    return typeof name === 'string' && ERROR_CLASS_NAME.test(name) ? name : 'Error';
+  } catch {
+    return 'Error';
+  }
+}
+
 function trackCampaignPresenterSubscription(subscription?: {remove?: () => void}): () => void {
   let removed = false;
   const unsubscribe = () => {
@@ -677,7 +696,12 @@ export async function registerGate(
           );
         } catch (error) {
           // Presenter failure is an infra failure, never a user dismiss → Unavailable.
-          console.warn('[Amply] gate presenter threw; reporting Unavailable (fail-open)', error);
+          // The thrown value is host data (an `Error('Invalid email: …')` carries the address),
+          // and a host's console often feeds crash-reporter breadcrumbs. Only its class goes out,
+          // with debug on too — the rule the Amplitude plugin keeps for its callbacks.
+          console.warn(
+            `[Amply] gate presenter threw (${hostErrorClass(error)}); reporting Unavailable (fail-open)`,
+          );
           report('Unavailable');
         }
       });
