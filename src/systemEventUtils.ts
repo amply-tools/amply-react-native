@@ -10,6 +10,19 @@ const DEFAULT_LABELS: Record<string, string> = {
   EventTriggered: 'Event triggered',
 };
 
+/** `@device` versions are major·10⁸ + minor·10⁴ + patch (1.2.0 = 100020000); shown decoded. */
+const VERSION_SEGMENT = 10_000;
+
+function displayDeviceValue(key: string, value: unknown): string {
+  if (!key.endsWith('VersionNormalized') || typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
+    return String(value);
+  }
+  const patch = value % VERSION_SEGMENT;
+  const minor = Math.floor(value / VERSION_SEGMENT) % VERSION_SEGMENT;
+  const major = Math.floor(value / (VERSION_SEGMENT * VERSION_SEGMENT));
+  return `${major}.${minor}.${patch}`;
+}
+
 export interface FormatOptions {
   /** When true, includes detailed campaign information. Default: false */
   verbose?: boolean;
@@ -33,6 +46,15 @@ export function formatSystemEventLabel(
     return `Campaign shown${campaignName ? ` "${campaignName}"` : ''}${campaignId ? ` (${campaignId})` : ''}${
       source ? ` via ${source}` : ''
     }`;
+  }
+  if (event.name === 'DevicePropertyChanged') {
+    // Sent by Amply SDK 0.20.0 and later: one `@device` field (`appVersionNormalized`, …) changed.
+    const key = event.properties.key as string | undefined;
+    if (!key) {
+      return 'Device property changed';
+    }
+    const show = (value: unknown) => displayDeviceValue(key, value);
+    return `Device property changed: ${key} ${show(event.properties.oldValue)} → ${show(event.properties.newValue)}`;
   }
   if (event.name === 'EventTriggered') {
     const source = event.properties.sourceEvent as string | undefined;

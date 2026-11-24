@@ -31,6 +31,40 @@ describe('formatSystemEventLabel', () => {
     });
   });
 
+  describe('DevicePropertyChanged', () => {
+    it('names the property and shows a normalized version the way people write it', () => {
+      const event = makeEvent('DevicePropertyChanged', {
+        key: 'appVersionNormalized',
+        oldValue: 100010003,
+        newValue: 100020000,
+      });
+      expect(formatSystemEventLabel(event)).toBe(
+        'Device property changed: appVersionNormalized 1.1.3 → 1.2.0',
+      );
+    });
+
+    it('decodes versions with a zero major, as SDK versions have', () => {
+      const event = makeEvent('DevicePropertyChanged', {
+        key: 'sdkVersionNormalized',
+        oldValue: 190000,
+        newValue: 200000,
+      });
+      expect(formatSystemEventLabel(event)).toBe(
+        'Device property changed: sdkVersionNormalized 0.19.0 → 0.20.0',
+      );
+    });
+
+    it('shows other properties as sent', () => {
+      const event = makeEvent('DevicePropertyChanged', {key: 'language', oldValue: 'en', newValue: 'de'});
+      expect(formatSystemEventLabel(event)).toBe('Device property changed: language en → de');
+    });
+
+    it('falls back to the plain label without a key', () => {
+      const event = makeEvent('DevicePropertyChanged');
+      expect(formatSystemEventLabel(event)).toBe('Device property changed');
+    });
+  });
+
   describe('other events', () => {
     it('formats CampaignShown with campaignId and source', () => {
       const event = makeEvent('CampaignShown', {
